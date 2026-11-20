@@ -9,16 +9,32 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "MOM Generator API"
+    # Public URL of this API (used to build the OAuth redirect URI).
+    public_base_url: str = "http://localhost:8000"
+    # Signs OAuth state and encrypts stored calendar tokens. CHANGE IN PRODUCTION.
+    secret_key: str = "dev-only-change-me"
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/mom_db"
 
+    # --- OpenAI ---
     openai_api_key: str | None = None
-    openai_transcribe_model: str = "whisper-1"
+    # Must support response_format="diarized_json" (speaker labels + timestamps).
+    openai_transcribe_model: str = "gpt-4o-transcribe-diarize"
     openai_llm_model: str = "gpt-4o-mini"
+    transcribe_concurrency: int = 4      # parallel chunk transcriptions at meeting end
+    refine_batch_lines: int = 120        # transcript lines per LLM refinement call
 
-    upload_dir: Path = Path("./data/uploads")
-    max_upload_mb: int = 25  # OpenAI transcription limit is 25 MB per file
+    # --- Audio chunks streamed by the overlay agent ---
+    audio_dir: Path = Path("./data/audio")
+    max_chunk_mb: int = 25               # OpenAI transcription limit per file
+    retain_audio: bool = False           # delete raw audio once transcribed (privacy)
 
+    # --- Microsoft Graph (Outlook calendar). Leave client_id empty to disable. ---
+    ms_client_id: str | None = None
+    ms_client_secret: str | None = None
+    ms_tenant: str = "common"            # "common" = work/school + personal accounts
+
+    # --- Email ---
     email_backend: Literal["console", "smtp"] = "console"
     email_outbox_dir: Path = Path("./data/outbox")
     email_from: str = "mom-bot@example.com"
@@ -29,6 +45,10 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
 
     cors_origins: list[str] = ["http://localhost:8501"]
+
+    @property
+    def ms_redirect_uri(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/calendar/microsoft/callback"
 
 
 @lru_cache
