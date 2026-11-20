@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mom
+      POSTGRES_PASSWORD: mom
+      POSTGRES_DB: mom_db
+    ports:
+      - "5433:5432"   # 5433 on the host so it doesn't clash with a locally installed Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mom -d mom_db"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://mom:mom@db:5432/mom_db
+      UPLOAD_DIR: /data/uploads
+      EMAIL_OUTBOX_DIR: /data/outbox
+    ports:
+      - "8000:8000"
+    volumes:
+      - appdata:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:
