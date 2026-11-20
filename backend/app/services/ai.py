@@ -1,4 +1,4 @@
-"""OpenAI-backed transcription and MOM extraction."""
+"""OpenAI-backed transcription, speaker identification, transcript refinement and MOM extraction."""
 import json
 import logging
 from datetime import date
@@ -12,6 +12,31 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 
+# --- Data shapes -------------------------------------------------------------------------------
+
+
+class Segment(BaseModel):
+    """One diarized utterance, times in seconds relative to the audio chunk."""
+    start: float
+    end: float
+    speaker: str
+    text: str
+
+
+class RawLine(BaseModel):
+    """Merged, time-ordered line before refinement."""
+    t: float          # seconds since recording start
+    source: str       # "mic" or "meeting"
+    speaker: str      # user's name for mic; chunk-scoped label (e.g. "M3-A") or mapped name for meeting
+    text: str
+
+
+class RefinedLine(BaseModel):
+    t: float
+    speaker: str
+    text: str
+
+
 class ExtractedActionItem(BaseModel):
     task: str
     owner: str | None = None
@@ -20,8 +45,8 @@ class ExtractedActionItem(BaseModel):
     @field_validator("deadline", mode="before")
     @classmethod
     def lenient_date(cls, v):
-        # The LLM is asked for ISO dates; anything else ("next week") becomes
-        # None so the organiser fills it in during review instead of failing.
+        # The LLM is asked for ISO dates; anything else ("next week") becomes None
+        # so the organiser fills it in during review instead of failing.
         if v in (None, "", "null"):
             return None
         try:
@@ -39,11 +64,42 @@ class ExtractedMom(BaseModel):
 
 
 class AIClient(Protocol):
-    def transcribe(self, audio_path: str) -> str: ...
+    def transcribe_segments(self, audio_path: str) -> list[Segment]: ...
+    def identify_speakers(self, lines: list[RawLine], participants: list[str], user_name: str) -> dict[str, str | None]: ...
+    def refine_transcript(self, lines: list[RawLine], participants: list[str], user_name: str) -> list[RefinedLine]: ...
     def extract_mom(self, transcript: str, meeting_title: str, meeting_date: date | None) -> ExtractedMom: ...
 
 
-SYSTEM_PROMPT = """You are an expert executive assistant who writes Minutes of Meeting (MOM).
+# --- Prompts -----------------------------------------------------------------------------------
+
+SPEAKER_PROMPT = """You identify speakers in a meeting transcript.
+The meeting audio was split into chunks and diarized per chunk, so anonymous labels look like
+"M3-A" (chunk 3, speaker A). The SAME person usually has DIFFERENT labels in different chunks.
+Lines from source "mic" are always the app user (already named).
+
+Using the participant list from the calendar invite and clues in the conversation (people
+addressing each other by name, introductions, roles, continuity of topic and speaking style),
+map each anonymous label to a participant name.
+
+Return ONLY a JSON object: {"mapping": {"<label>": "<participant name>" or null}}
+Include every anonymous label. Use null when you are not reasonably confident.
+Only use names from the participant list."""
+
+REFINE_PROMPT = """You turn a raw, machine-generated meeting transcript into a clean, readable one.
+Input lines have: t (seconds), source ("mic" = the app user, "meeting" = other participants), speaker, text.
+
+Rules:
+- Fix obvious transcription errors, punctuation and casing. Remove filler words (um, uh, you know)
+  and false starts, but NEVER change meaning, add content, or summarise.
+- The mic also picks up other participants through the user's speakers. If a "mic" line repeats
+  what a "meeting" line at about the same time says, DROP the mic line (it is echo).
+- Merge consecutive lines by the same speaker into one line (keep the first line's t).
+- Keep speaker names exactly as given (including placeholders like "Speaker 3A").
+- Keep the original language; do not translate.
+
+Return ONLY JSON: {"lines": [{"t": number, "speaker": string, "text": string}]}"""
+
+MOM_PROMPT = """You are an expert executive assistant who writes Minutes of Meeting (MOM).
 Read the meeting transcript and return ONLY a JSON object with exactly these keys:
 
 {
@@ -62,6 +118,13 @@ Rules:
 - Write in clear, neutral, professional English."""
 
 
+def _lines_json(lines: list[RawLine]) -> str:
+    return json.dumps([l.model_dump() for l in lines], ensure_ascii=False)
+
+
+# --- OpenAI implementation ---------------------------------------------------------------------
+
+
 class OpenAIClient:
     def __init__(self) -> None:
         from openai import OpenAI
@@ -73,31 +136,64 @@ class OpenAIClient:
         self._transcribe_model = s.openai_transcribe_model
         self._llm_model = s.openai_llm_model
 
-    def transcribe(self, audio_path: str) -> str:
-        with Path(audio_path).open("rb") as f:
-            result = self._client.audio.transcriptions.create(
-                model=self._transcribe_model, file=f, response_format="text"
-            )
-        # response_format="text" returns a plain string
-        return result if isinstance(result, str) else result.text
-
-    def extract_mom(self, transcript: str, meeting_title: str, meeting_date: date | None) -> ExtractedMom:
-        user_msg = (
-            f"Meeting title (as given by organiser): {meeting_title}\n"
-            f"Meeting date: {meeting_date.isoformat() if meeting_date else 'unknown'}\n\n"
-            f"Transcript:\n{transcript}"
-        )
+    def _json_chat(self, system: str, user: str) -> dict:
         resp = self._client.chat.completions.create(
             model=self._llm_model,
-            temperature=0.2,
+            temperature=0.1,
             response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         )
-        content = resp.choices[0].message.content or "{}"
-        return ExtractedMom.model_validate(json.loads(content))
+        return json.loads(resp.choices[0].message.content or "{}")
+
+    def transcribe_segments(self, audio_path: str) -> list[Segment]:
+        with Path(audio_path).open("rb") as f:
+            result = self._client.audio.transcriptions.create(
+                model=self._transcribe_model,
+                file=f,
+                response_format="diarized_json",
+                chunking_strategy="auto",  # required by the diarize model for audio > 30 s
+            )
+        return [
+            Segment(start=s.start, end=s.end, speaker=s.speaker, text=s.text.strip())
+            for s in (result.segments or [])
+            if s.text and s.text.strip()
+        ]
+
+    def identify_speakers(self, lines: list[RawLine], participants: list[str], user_name: str) -> dict[str, str | None]:
+        data = self._json_chat(
+            SPEAKER_PROMPT,
+            f"App user (mic): {user_name}\nParticipants: {json.dumps(participants, ensure_ascii=False)}\n\n"
+            f"Transcript lines:\n{_lines_json(lines)}",
+        )
+        allowed = {p.lower(): p for p in participants}
+        mapping = {}
+        for label, name in (data.get("mapping") or {}).items():
+            # Never accept a name that is not on the invite.
+            mapping[label] = allowed.get(str(name).lower()) if name else None
+        return mapping
+
+    def refine_transcript(self, lines: list[RawLine], participants: list[str], user_name: str) -> list[RefinedLine]:
+        data = self._json_chat(
+            REFINE_PROMPT,
+            f"App user (mic): {user_name}\nParticipants: {json.dumps(participants, ensure_ascii=False)}\n\n"
+            f"Lines:\n{_lines_json(lines)}",
+        )
+        out = []
+        for item in data.get("lines") or []:
+            try:
+                out.append(RefinedLine.model_validate(item))
+            except Exception:  # noqa: BLE001 - skip a malformed line rather than lose the batch
+                log.warning("Dropping malformed refined line: %r", item)
+        return out
+
+    def extract_mom(self, transcript: str, meeting_title: str, meeting_date: date | None) -> ExtractedMom:
+        data = self._json_chat(
+            MOM_PROMPT,
+            f"Meeting title: {meeting_title}\n"
+            f"Meeting date: {meeting_date.isoformat() if meeting_date else 'unknown'}\n\n"
+            f"Transcript:\n{transcript}",
+        )
+        return ExtractedMom.model_validate(data)
 
 
 def get_ai_client() -> AIClient:

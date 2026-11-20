@@ -19,7 +19,7 @@ services:
     env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql+psycopg://mom:mom@db:5432/mom_db
-      UPLOAD_DIR: /data/uploads
+      AUDIO_DIR: /data/audio
       EMAIL_OUTBOX_DIR: /data/outbox
     ports:
       - "8000:8000"
