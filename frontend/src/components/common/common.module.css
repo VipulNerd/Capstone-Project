@@ -1,0 +1,258 @@
+/* ---------- Button ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-weight: 550;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+  text-decoration: none !important;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.primary {
+  background: var(--primary);
+  color: #fff;
+}
+.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+.secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.danger {
+  background: var(--danger);
+  color: #fff;
+}
+.ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.sm {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.full {
+  width: 100%;
+}
+
+/* ---------- Form fields ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.required {
+  color: var(--danger);
+  margin-left: 2px;
+}
+.control {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.control:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.control:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+textarea.control {
+  resize: vertical;
+  min-height: 90px;
+}
+.invalid {
+  border-color: var(--danger);
+}
+.errorText {
+  color: var(--danger);
+  font-size: 12px;
+}
+.hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---------- Spinner ---------- */
+.spinnerWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 0;
+  color: var(--text-muted);
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.spinnerSm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Alerts ---------- */
+.alert {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.emptyIcon {
+  font-size: 32px;
+}
+.empty h3 {
+  color: var(--text);
+}
+
+/* ---------- Badge ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tone-neutral { background: var(--surface-2); color: var(--text-muted); }
+.tone-info { background: var(--info-soft); color: var(--info); }
+.tone-warning { background: var(--warning-soft); color: var(--warning); }
+.tone-success { background: var(--success-soft); color: var(--success); }
+.tone-danger { background: var(--danger-soft); color: var(--danger); }
+.tone-primary { background: var(--primary-soft); color: var(--primary); }
+
+/* ---------- Modal ---------- */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 900;
+}
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+.modalHeader {
+  padding: 18px 20px 0;
+}
+.modalBody {
+  padding: 12px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 18px;
+}
+
+/* ---------- Dropzone ---------- */
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.dropzone:hover,
+.dragging {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.dropzoneIcon {
+  font-size: 28px;
+}
+.fileChip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.fileChip > div {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

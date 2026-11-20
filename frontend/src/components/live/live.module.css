@@ -1,0 +1,267 @@
+/* ---------- shared bits ---------- */
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 650;
+  flex-shrink: 0;
+  position: relative;
+}
+.speakingRing {
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--success);
+}
+.rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+.recDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.pausedDot {
+  background: var(--warning);
+  animation: none;
+}
+.recPaused {
+  color: var(--warning);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ---------- transcript ---------- */
+.feed {
+  height: 520px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 6px;
+  scroll-behavior: smooth;
+}
+.feedCompact {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+  gap: 10px;
+}
+.line {
+  display: flex;
+  gap: 10px;
+  animation: fadeIn 0.3s ease-out;
+}
+.lineBody {
+  min-width: 0;
+}
+.lineHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+.lineHead strong {
+  font-weight: 600;
+}
+.time {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.text {
+  font-size: 14px;
+  margin-top: 1px;
+}
+.listening {
+  color: var(--text-muted);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: pulse 1s infinite;
+}
+.dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------- participants ---------- */
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.personInfo {
+  flex: 1;
+  min-width: 0;
+}
+.personInfo div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.speakingTag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success);
+}
+.noEmail {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warning);
+}
+
+/* ---------- overlay (PiP window) ---------- */
+.overlay {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+}
+.overlayHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.overlayTitle {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nowSpeaking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+.overlayFoot {
+  display: flex;
+  gap: 8px;
+}
+.overlayFoot > * {
+  flex: 1;
+}
+
+/* ---------- Teams meeting picker ---------- */
+.meetingList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.meetingOption {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  background: var(--surface);
+  width: 100%;
+  text-align: left;
+}
+.meetingOption:hover {
+  border-color: var(--primary);
+}
+.meetingSelected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.timeBox {
+  text-align: center;
+  min-width: 56px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.meetingInfo {
+  flex: 1;
+  min-width: 0;
+}
+.stack {
+  display: flex;
+}
+.stack > * {
+  margin-left: -8px;
+  border: 2px solid var(--surface);
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+.stack > :first-child {
+  margin-left: 0;
+}
+.howTo {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+.liveLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .liveLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .feed {
+    height: 420px;
+  }
+}
