@@ -6,18 +6,19 @@ import ProtectedRoute from './routes/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import { Spinner } from './components/common';
+import config from './config';
 
 // Pages are code-split so each one loads only when first visited.
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const UploadPage = lazy(() => import('./pages/UploadPage'));
+const NewMeetingPage = lazy(() => import('./pages/NewMeetingPage'));
+const RecordPage = lazy(() => import('./pages/RecordPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProcessingPage = lazy(() => import('./pages/ProcessingPage'));
 const MomReviewPage = lazy(() => import('./pages/MomReviewPage'));
 const DistributionPage = lazy(() => import('./pages/DistributionPage'));
 const HistoryPage = lazy(() => import('./pages/HistoryPage'));
 const MeetingDetailPage = lazy(() => import('./pages/MeetingDetailPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
-const LiveStartPage = lazy(() => import('./pages/LiveStartPage'));
-const LiveSessionPage = lazy(() => import('./pages/LiveSessionPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const router = createBrowserRouter([
@@ -29,15 +30,16 @@ const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <DashboardPage /> },
-          { path: 'live/new', element: <LiveStartPage /> },
-          { path: 'live/:id', element: <LiveSessionPage /> },
-          { path: 'meetings/new', element: <UploadPage /> },
+          { path: 'meetings/new', element: <NewMeetingPage /> },
+          { path: 'meetings/:id/record', element: <RecordPage /> },
           { path: 'meetings/:id', element: <MeetingDetailPage /> },
           { path: 'meetings/:id/processing', element: <ProcessingPage /> },
           { path: 'meetings/:id/review', element: <MomReviewPage /> },
           { path: 'meetings/:id/distribute', element: <DistributionPage /> },
           { path: 'history', element: <HistoryPage /> },
-          { path: 'search', element: <SearchPage /> },
+          { path: 'settings', element: <SettingsPage /> },
+          // Search needs a backend endpoint that doesn't exist yet (see README).
+          ...(config.FEATURES.search ? [{ path: 'search', element: <SearchPage /> }] : []),
         ],
       },
     ],

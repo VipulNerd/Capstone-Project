@@ -29,6 +29,15 @@ services:
       db:
         condition: service_healthy
 
+  frontend:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8000   # nginx forwards /api/* here
+    ports:
+      - "8080:80"   # open http://localhost:8080
+    depends_on:
+      - backend
+
 volumes:
   pgdata:
   appdata:

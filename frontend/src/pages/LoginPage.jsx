@@ -1,57 +1,89 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Button, ErrorMessage, Input } from '../components/common';
-import { hasErrors, validateLogin } from '../utils/validators';
-import config from '../config';
+import { Button, ErrorMessage, Input, TokenReveal } from '../components/common';
+import { hasErrors, isBlank, validateOrganiser } from '../utils/validators';
 import styles from './pages.module.css';
 
 export default function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+  const { register, loginWithToken, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/';
 
-  // Controlled form state
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [mode, setMode] = useState('register'); // register | token
+  const [form, setForm] = useState({ name: '', email: '', token: '' });
   const [errors, setErrors] = useState({});
-  const [touched, setTouched] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState(null);
+  const [newToken, setNewToken] = useState(null);
 
-  if (isAuthenticated) return <Navigate to={from} replace />;
+  // Stay on this page after registering until the user has seen their token.
+  if (isAuthenticated && !newToken) return <Navigate to={from} replace />;
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    const next = { ...form, [name]: value };
+  const validate = (f) => (mode === 'register' ? validateOrganiser(f) : isBlank(f.token) ? { token: 'Paste your API token' } : {});
+
+  const setField = (e) => {
+    const next = { ...form, [e.target.name]: e.target.value };
     setForm(next);
-    // Re-validate a field as the user types, once they've visited it.
-    if (touched[name]) setErrors(validateLogin(next));
+    if (Object.keys(errors).length) setErrors(validate(next));
   };
 
-  const handleBlur = (e) => {
-    setTouched((t) => ({ ...t, [e.target.name]: true }));
-    setErrors(validateLogin(form));
+  const switchMode = (m) => {
+    setMode(m);
+    setErrors({});
+    setServerError(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const validation = validateLogin(form);
+    const validation = validate(form);
     setErrors(validation);
-    setTouched({ email: true, password: true });
     if (hasErrors(validation)) return;
-
     setSubmitting(true);
     setServerError(null);
     try {
-      await login(form.email.trim(), form.password);
-      navigate(from, { replace: true });
+      if (mode === 'register') {
+        setNewToken(await register(form.name, form.email));
+      } else {
+        await loginWithToken(form.token);
+        navigate(from, { replace: true });
+      }
     } catch (err) {
-      setServerError(err);
+      setServerError(
+        err.status === 409
+          ? { message: 'That email already has an account. Sign in with its API token instead.' }
+          : err.status === 401
+            ? { message: 'That token is not valid. It may have been replaced by a newer one.' }
+            : err,
+      );
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (newToken) {
+    return (
+      <div className={styles.authWrap}>
+        <div className={`card ${styles.authCard}`}>
+          <div className={styles.authHeader}>
+            <span className={styles.authLogo} aria-hidden="true">
+              🔑
+            </span>
+            <h1>Save your API token</h1>
+            <p className="muted">
+              This is your sign-in key. It's shown <strong>only once</strong>. Keep it somewhere safe to sign in on
+              another browser.
+            </p>
+          </div>
+          <TokenReveal token={newToken} />
+          <Button fullWidth onClick={() => navigate(from, { replace: true })}>
+            I've saved it, continue
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.authWrap}>
@@ -60,42 +92,62 @@ export default function LoginPage() {
           <span className={styles.authLogo} aria-hidden="true">
             📝
           </span>
-          <h1>Sign in to MinutesAI</h1>
-          <p className="muted">Turn meeting recordings into approved minutes.</p>
+          <h1>Welcome to MinutesAI</h1>
+          <p className="muted">Record your meetings and get approved minutes.</p>
+        </div>
+
+        <div className={styles.segmented} role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'register'}
+            className={mode === 'register' ? styles.segActive : ''}
+            onClick={() => switchMode('register')}
+          >
+            Create account
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'token'}
+            className={mode === 'token' ? styles.segActive : ''}
+            onClick={() => switchMode('token')}
+          >
+            I have a token
+          </button>
         </div>
 
         <ErrorMessage error={serverError} />
 
-        <Input
-          label="Email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          value={form.email}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={touched.email && errors.email}
-          required
-        />
-        <Input
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          value={form.password}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={touched.password && errors.password}
-          required
-        />
+        {mode === 'register' ? (
+          <>
+            <Input label="Your name" name="name" autoComplete="name" value={form.name} onChange={setField} error={errors.name} />
+            <Input
+              label="Your email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              value={form.email}
+              onChange={setField}
+              error={errors.email}
+            />
+          </>
+        ) : (
+          <Input
+            label="API token"
+            name="token"
+            placeholder="mom_…"
+            autoComplete="off"
+            value={form.token}
+            onChange={setField}
+            error={errors.token}
+            hint="The token you saved when you created your account (or from Settings → New token)."
+          />
+        )}
 
         <Button type="submit" fullWidth loading={submitting}>
-          {submitting ? 'Signing in…' : 'Sign in'}
+          {mode === 'register' ? 'Create account' : 'Sign in'}
         </Button>
-
-        {config.USE_MOCK && (
-          <p className={styles.demoHint}>Demo mode: any email and a password of 6+ characters will work.</p>
-        )}
       </form>
     </div>
   );

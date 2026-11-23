@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useBlocker, useNavigate, useParams } from 'react-router-dom';
-import { approveMom, getMom, updateMom } from '../api/momService';
-import { getTranscript } from '../api/liveService';
-import TranscriptFeed from '../components/live/TranscriptFeed';
+import { getMeeting } from '../api/meetingService';
+import { approveMom, updateMom } from '../api/momService';
 import useApi from '../hooks/useApi';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Button, ConfirmDialog, ErrorMessage, Spinner, TextArea } from '../components/common';
+import { Button, ConfirmDialog, ErrorMessage, Input, Spinner, TextArea } from '../components/common';
 import EditableList from '../components/mom/EditableList';
 import ActionItemTable from '../components/mom/ActionItemTable';
 import ParticipantList from '../components/mom/ParticipantList';
+import TranscriptView from '../components/mom/TranscriptView';
 import WorkflowStepper from '../components/mom/WorkflowStepper';
 import { hasErrors, isBlank, isEmail, isUnnamedSpeaker, validateMom } from '../utils/validators';
-import { formatDate } from '../utils/formatDate';
+import { recipientEmails } from '../utils/recipients';
+import { redirectFor } from './meetingLinks';
 import styles from './pages.module.css';
 
-const pickMom = ({ summary, discussionPoints, decisions, actionItems, participants }) => ({
+// The editable part of a meeting (everything PUT /meetings/{id}/mom accepts).
+const pickDraft = ({ title, date, summary, discussionPoints, decisions, actionItems, participants }) => ({
+  title,
+  date,
   summary,
   discussionPoints,
   decisions,
@@ -22,19 +27,12 @@ const pickMom = ({ summary, discussionPoints, decisions, actionItems, participan
   participants,
 });
 
-// Removes empty list entries before saving.
-const cleanMom = (mom) => ({
-  ...mom,
-  discussionPoints: mom.discussionPoints.filter((d) => d.trim()),
-  decisions: mom.decisions.filter((d) => d.trim()),
-});
-
 export default function MomReviewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { data, loading, error, refetch } = useApi(() => getMom(id), [id]);
-  const { data: transcript } = useApi(() => getTranscript(id), [id]);
+  const { user } = useAuth();
+  const { data, loading, error, refetch } = useApi(() => getMeeting(id), [id]);
 
   const [draft, setDraft] = useState(null);
   const [savedSnapshot, setSavedSnapshot] = useState('');
@@ -44,19 +42,21 @@ export default function MomReviewPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [approving, setApproving] = useState(false);
 
-  // When a (new) MOM arrives from the API, copy it into editable local state.
+  // When a (new) meeting arrives from the API, copy it into editable local state.
   const [loadedFrom, setLoadedFrom] = useState(null);
   if (data && data !== loadedFrom) {
     setLoadedFrom(data);
-    const mom = pickMom(data);
-    setDraft(mom);
-    setSavedSnapshot(JSON.stringify(mom));
+    const d = pickDraft(data);
+    setDraft(d);
+    setSavedSnapshot(JSON.stringify(d));
   }
 
   const dirty = draft && JSON.stringify(draft) !== savedSnapshot;
 
   // Warn before leaving the page with unsaved edits.
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && !approving && currentLocation.pathname !== nextLocation.pathname);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => dirty && !approving && currentLocation.pathname !== nextLocation.pathname,
+  );
 
   useEffect(() => {
     if (!dirty) return undefined;
@@ -67,12 +67,12 @@ export default function MomReviewPage() {
 
   const update = (field, value) => {
     const next = { ...draft, [field]: value };
-    // Keep action item owners in sync if a participant's name is edited or removed.
-    if (field === 'participants') {
-      next.actionItems = draft.actionItems.map((a) => {
-        const p = value.find((x) => x.email && x.email === a.ownerEmail);
-        return p ? { ...a, owner: p.name } : a.ownerEmail ? { ...a, owner: '', ownerEmail: '' } : a;
-      });
+    // A participant renamed in place keeps their action items.
+    if (field === 'participants' && value.length === draft.participants.length) {
+      const renamed = new Map(draft.participants.map((p, i) => [p.name, value[i].name]));
+      next.actionItems = draft.actionItems.map((a) =>
+        renamed.has(a.owner) && renamed.get(a.owner) !== a.owner ? { ...a, owner: renamed.get(a.owner) } : a,
+      );
     }
     setDraft(next);
     if (showErrors) setErrors(validateMom(next));
@@ -84,7 +84,7 @@ export default function MomReviewPage() {
       { ok: !isBlank(draft.summary), label: 'Summary written' },
       {
         ok: draft.participants.length > 0 && draft.participants.every((p) => !isBlank(p.name) && !isUnnamedSpeaker(p.name)),
-        label: 'Every speaker is identified by name',
+        label: 'Every participant is named (no “Speaker 3A”)',
       },
       {
         ok: draft.participants.every((p) => isBlank(p.email) || isEmail(p.email)),
@@ -95,23 +95,17 @@ export default function MomReviewPage() {
     ];
   }, [draft]);
 
-  if (error?.status === 409 && data === null) {
-    // Draft not ready yet: send the user to the processing screen.
-    return <Navigate to={`/meetings/${id}/processing`} replace />;
-  }
   if (loading && !draft) return <Spinner label="Loading draft…" />;
   if (error && !draft) return <ErrorMessage error={error} onRetry={refetch} />;
   if (!draft) return null;
 
-  if (data.status === 'approved' || data.status === 'sent') {
-    return <Navigate to={`/meetings/${id}`} replace />;
-  }
+  const redirect = !approving && redirectFor(data, ['draft']);
+  if (redirect) return <Navigate to={redirect} replace />;
 
   const save = async ({ silent = false } = {}) => {
     setSaving(true);
     try {
-      const cleaned = cleanMom(draft);
-      const saved = pickMom(await updateMom(id, cleaned));
+      const saved = pickDraft(await updateMom(id, draft));
       setDraft(saved);
       setSavedSnapshot(JSON.stringify(saved));
       if (!silent) toast.success('Draft saved');
@@ -124,7 +118,8 @@ export default function MomReviewPage() {
     }
   };
 
-  const recipients = draft.participants.filter((p) => isEmail(p.email || '')).length;
+  const recipients = recipientEmails(draft.participants, data.organizerEmail);
+  const withoutEmail = draft.participants.filter((p) => !isEmail(p.email || ''));
 
   const requestApproval = () => {
     const validation = validateMom(draft);
@@ -140,11 +135,12 @@ export default function MomReviewPage() {
   const approve = async () => {
     setApproving(true);
     try {
+      // Always save first so the approved MOM is exactly what's on screen.
       if (dirty && !(await save({ silent: true }))) {
         setApproving(false);
         return;
       }
-      await approveMom(id);
+      await approveMom(id, user.name);
       toast.success('MOM approved');
       setSavedSnapshot(JSON.stringify(draft));
       navigate(`/meetings/${id}/distribute`);
@@ -160,18 +156,36 @@ export default function MomReviewPage() {
       <div className="page-header">
         <div>
           <h1>Review minutes: {data.title}</h1>
-          <p>
-            {formatDate(data.date)} · The AI drafted this. Check it carefully and approve it before it is sent.
-          </p>
+          <p>The AI drafted this. Check it carefully and approve it before it is sent.</p>
         </div>
       </div>
 
       <div className="card">
-        <WorkflowStepper status="draft_ready" />
+        <WorkflowStepper status="draft" />
       </div>
 
       <div className={styles.reviewLayout}>
         <div className={styles.reviewMain}>
+          <div className="card">
+            <div className="card-title">
+              <h2>Meeting details</h2>
+            </div>
+            <div className={styles.formGrid}>
+              <Input
+                label="Title"
+                value={draft.title}
+                onChange={(e) => update('title', e.target.value)}
+                error={showErrors && errors.title}
+              />
+              <Input
+                label="Meeting date"
+                type="date"
+                value={draft.date}
+                onChange={(e) => update('date', e.target.value)}
+              />
+            </div>
+          </div>
+
           <div className="card">
             <div className="card-title">
               <h2>Summary</h2>
@@ -229,7 +243,8 @@ export default function MomReviewPage() {
               <div>
                 <h2>Participants ({draft.participants.length})</h2>
                 <p className="muted small">
-                  Detected automatically. Correct names if needed, and add an email for anyone who should receive the MOM.
+                  From the invite, plus anyone the AI heard in the meeting. Correct names if needed, and add an email
+                  for anyone who should receive the MOM.
                 </p>
               </div>
             </div>
@@ -241,16 +256,7 @@ export default function MomReviewPage() {
             />
           </div>
 
-          {transcript?.length > 0 && (
-            <details className="card">
-              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-                Source transcript ({transcript.length} lines). Check who said what.
-              </summary>
-              <div style={{ marginTop: 14 }}>
-                <TranscriptFeed lines={transcript} />
-              </div>
-            </details>
-          )}
+          <TranscriptView meeting={data} title="Transcript: check who said what" />
         </div>
 
         <aside className={styles.reviewSide}>
@@ -268,9 +274,9 @@ export default function MomReviewPage() {
                 </li>
               ))}
             </ul>
-            {draft.participants.length > recipients && (
+            {withoutEmail.length > 0 && (
               <p className="small" style={{ color: 'var(--warning)', marginTop: 12 }}>
-                ⚠ {draft.participants.length - recipients} participant(s) have no email and won't receive the MOM.
+                ⚠ {withoutEmail.length} participant(s) have no email and won't receive the MOM.
               </p>
             )}
           </div>
@@ -292,9 +298,9 @@ export default function MomReviewPage() {
         title="Approve these minutes?"
         message={
           <>
-            Once approved, the MOM is locked for editing and can be sent to{' '}
-            <strong>{recipients} participants</strong> with an email address
-            {draft.participants.length > recipients && ` (${draft.participants.length - recipients} without an email won't receive it)`}. Check the action items and owners first.
+            Once approved, the MOM is locked for editing and can be emailed to{' '}
+            <strong>{recipients.length} recipient(s)</strong> (participants with an email, plus you as organiser). You can
+            withdraw approval until it has been sent.
           </>
         }
         confirmLabel="Approve"

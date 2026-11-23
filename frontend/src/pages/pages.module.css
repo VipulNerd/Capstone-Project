@@ -323,3 +323,62 @@
   font-size: 64px;
   color: var(--primary);
 }
+
+/* ---------- New meeting / recording ---------- */
+.fieldError {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.subheading {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+.consent {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  cursor: pointer;
+  font-size: 14px;
+}
+.consent input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.calendarConnect {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trackGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 700px) {
+  .trackGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.trackCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trackCard h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.trackOn {
+  border-color: var(--success);
+  box-shadow: 0 0 0 1px var(--success);
+}
+.trackState {
+  font-size: 13px;
+  font-weight: 600;
+}

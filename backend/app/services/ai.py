@@ -1,6 +1,7 @@
 """OpenAI-backed transcription, speaker identification, transcript refinement and MOM extraction."""
 import json
 import logging
+import os
 from datetime import date
 from pathlib import Path
 from typing import Protocol
@@ -127,12 +128,21 @@ def _lines_json(lines: list[RawLine]) -> str:
 
 class OpenAIClient:
     def __init__(self) -> None:
-        from openai import OpenAI
+        from openai import AzureOpenAI, OpenAI
 
         s = get_settings()
         if not s.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
-        self._client = OpenAI(api_key=s.openai_api_key)
+        base_url = s.openai_base_url or os.environ.get("OPENAI_BASE_URL") or None
+        if s.openai_api_version:
+            # Azure: https://<resource>.openai.azure.com[/openai/v1/] -> endpoint without the path
+            endpoint = (base_url or "").split("/openai")[0].rstrip("/")
+            if not endpoint:
+                raise RuntimeError("OPENAI_BASE_URL (the Azure OpenAI endpoint) is required with OPENAI_API_VERSION")
+            self._client = AzureOpenAI(api_key=s.openai_api_key, azure_endpoint=endpoint, api_version=s.openai_api_version)
+        else:
+            # Explicit default: the SDK would take an empty OPENAI_BASE_URL env var literally.
+            self._client = OpenAI(api_key=s.openai_api_key, base_url=base_url or "https://api.openai.com/v1")
         self._transcribe_model = s.openai_transcribe_model
         self._llm_model = s.openai_llm_model
 

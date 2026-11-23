@@ -1,52 +1,70 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { getMeetingStatus } from '../api/meetingService';
+import { Navigate, useParams } from 'react-router-dom';
+import { getMeeting, listChunks, retryMeeting } from '../api/meetingService';
 import usePolling from '../hooks/usePolling';
+import { useToast } from '../context/ToastContext';
 import { Button, ErrorMessage, Spinner } from '../components/common';
 import WorkflowStepper from '../components/mom/WorkflowStepper';
+import TranscriptView from '../components/mom/TranscriptView';
+import { redirectFor } from './meetingLinks';
 import config from '../config';
 import styles from './pages.module.css';
 
-const ORDER = ['uploaded', 'transcribing', 'extracting', 'draft_ready'];
-
-function buildSteps(sourceType) {
+// The backend has one "finalizing" status; chunk statuses and has_transcript show how far it got.
+function buildSteps(meeting, chunks) {
+  const total = chunks.length;
+  const transcribed = chunks.filter((c) => c.status === 'transcribed').length;
+  const allTranscribed = total > 0 && transcribed === total;
+  const running = meeting.status === 'finalizing';
+  const state = (done, active) => (done ? 'done' : active && running ? 'active' : 'todo');
   return [
-    { key: 'uploaded', label: sourceType === 'live' ? 'Meeting captured' : 'File uploaded' },
-    sourceType === 'audio'
-      ? { key: 'transcribing', label: 'Transcribing audio and identifying speakers' }
-      : sourceType === 'live'
-        ? { key: 'transcribing', label: 'Live transcript and Teams participants captured' }
-        : { key: 'transcribing', label: 'Transcript received (no transcription needed)' },
-    { key: 'extracting', label: 'Extracting discussion points, decisions and action items' },
-    { key: 'draft_ready', label: 'MOM draft ready for review' },
+    { label: `Audio received (${total} chunk${total === 1 ? '' : 's'})`, state: 'done' },
+    {
+      label: `Transcribing and separating speakers (${transcribed}/${total})`,
+      state: state(allTranscribed || meeting.hasTranscript, true),
+    },
+    {
+      label: 'Matching voices to participants and cleaning up the transcript',
+      state: state(meeting.hasTranscript, allTranscribed),
+    },
+    { label: 'Writing summary, decisions and action items', state: state(false, meeting.hasTranscript) },
   ];
 }
 
 export default function ProcessingPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  const toast = useToast();
   const [meeting, setMeeting] = useState(null);
+  const [chunks, setChunks] = useState([]);
   const [error, setError] = useState(null);
+  const [retrying, setRetrying] = useState(null);
 
-  const status = meeting?.status;
-  const finished = status === 'draft_ready' || status === 'failed' || status === 'approved' || status === 'sent';
-
+  const active = (!meeting || meeting.status === 'finalizing') && error?.status !== 404;
   usePolling(
     async () => {
       try {
-        const m = await getMeetingStatus(id);
+        const [m, c] = await Promise.all([getMeeting(id), listChunks(id)]);
         setMeeting(m);
+        setChunks(c);
         setError(null);
-        if (m.status === 'draft_ready') navigate(`/meetings/${id}/review`, { replace: true });
-        else if (m.status === 'approved' || m.status === 'sent') navigate(`/meetings/${id}`, { replace: true });
-        else if (m.status === 'live') navigate(`/live/${id}`, { replace: true });
       } catch (err) {
         setError(err);
       }
     },
     config.POLL_INTERVAL_MS,
-    !finished && error?.status !== 404,
+    active,
   );
+
+  const retry = async (skipFailed) => {
+    setRetrying(skipFailed ? 'skip' : 'all');
+    try {
+      setMeeting(await retryMeeting(id, skipFailed));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setRetrying(null);
+    }
+  };
 
   if (error?.status === 404) {
     return (
@@ -60,55 +78,67 @@ export default function ProcessingPage() {
       </div>
     );
   }
+  if (!meeting) return error ? <ErrorMessage error={error} /> : <Spinner label="Checking progress…" />;
 
-  if (!meeting) return <Spinner label="Checking progress…" />;
+  const redirect = redirectFor(meeting, ['finalizing', 'failed']);
+  if (redirect) return <Navigate to={redirect} replace />;
 
-  const currentIndex = ORDER.indexOf(status);
-  const steps = buildSteps(meeting.sourceType);
+  const failedChunks = chunks.filter((c) => c.status === 'failed');
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
           <h1>{meeting.title}</h1>
-          <p>We're turning your meeting into structured minutes. This page updates automatically.</p>
+          <p>We're turning the recording into a transcript and minutes. This page updates automatically.</p>
         </div>
       </div>
 
       <div className="card">
-        <WorkflowStepper status={status} />
+        <WorkflowStepper status={meeting.status} />
       </div>
 
       <ErrorMessage error={error} />
 
-      {status === 'failed' ? (
+      {meeting.status === 'failed' && (
         <div className="card">
-          <ErrorMessage error="Processing failed. Please try uploading the file again." />
-          <div style={{ marginTop: 12 }}>
-            <Button to="/meetings/new">Upload again</Button>
+          <ErrorMessage error={`Processing failed: ${meeting.errorMessage || 'unknown error'}`} />
+          <p className="muted small">
+            Retrying continues where it stopped. Audio that was already transcribed isn't sent again.
+          </p>
+          <div className="row" style={{ marginTop: 12 }}>
+            <Button onClick={() => retry(false)} loading={retrying === 'all'} disabled={!!retrying}>
+              Retry
+            </Button>
+            {failedChunks.length > 0 && (
+              <Button variant="secondary" onClick={() => retry(true)} loading={retrying === 'skip'} disabled={!!retrying}>
+                Retry without the {failedChunks.length} unreadable chunk(s)
+              </Button>
+            )}
           </div>
         </div>
-      ) : (
-        <div className="card">
-          <ol className={styles.processSteps}>
-            {steps.map((step, i) => {
-              const done = i < currentIndex || status === 'draft_ready';
-              const active = i === currentIndex && !done;
-              return (
-                <li
-                  key={step.key}
-                  className={`${styles.processStep} ${done ? styles.processDone : ''} ${active ? styles.processActive : ''}`}
-                >
-                  <span className={styles.processIcon}>
-                    {done ? '✓' : active ? <Spinner size="sm" inline /> : i + 1}
-                  </span>
-                  {step.label}
-                </li>
-              );
-            })}
-          </ol>
-        </div>
       )}
+
+      <div className="card">
+        <ol className={styles.processSteps}>
+          {buildSteps(meeting, chunks).map((step, i) => (
+            <li
+              key={step.label}
+              className={`${styles.processStep} ${step.state === 'done' ? styles.processDone : ''} ${
+                step.state === 'active' ? styles.processActive : ''
+              }`}
+            >
+              <span className={styles.processIcon}>
+                {step.state === 'done' ? '✓' : step.state === 'active' ? <Spinner size="sm" inline /> : i + 1}
+              </span>
+              {step.label}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {/* The transcript is saved before the MOM is drafted, so it's available even if drafting fails. */}
+      <TranscriptView meeting={meeting} title="Transcript (ready)" />
     </div>
   );
 }

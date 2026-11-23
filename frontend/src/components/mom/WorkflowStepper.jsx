@@ -1,17 +1,15 @@
 import styles from './mom.module.css';
 
-const STEPS = ['Capture', 'Transcribe', 'Generate MOM', 'Review & approve', 'Distribute'];
+const STEPS = ['Record', 'Transcribe & draft', 'Review & approve', 'Distribute'];
 
-// Maps a meeting status to the index of the current workflow step.
+// Maps a backend meeting status to the index of the current workflow step.
 const STATUS_STEP = {
-  live: 1,
-  uploaded: 1,
-  transcribing: 1,
-  extracting: 2,
-  draft_ready: 3,
-  approved: 4,
-  sent: 5,
-  failed: 4,
+  recording: 0,
+  finalizing: 1,
+  failed: 1,
+  draft: 2,
+  approved: 3,
+  distributed: 4,
 };
 
 export default function WorkflowStepper({ status }) {

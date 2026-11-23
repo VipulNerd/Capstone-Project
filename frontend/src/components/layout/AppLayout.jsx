@@ -2,16 +2,20 @@ import { Suspense, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button, Spinner } from '../common';
+import { getHealth } from '../../api/meetingService';
+import usePolling from '../../hooks/usePolling';
 import config from '../../config';
 import styles from './AppLayout.module.css';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '🏠', end: true },
-  { to: '/live/new', label: 'Live capture', icon: '🔴' },
-  { to: '/meetings/new', label: 'Upload recording', icon: '⬆️' },
+  { to: '/meetings/new', label: 'Record meeting', icon: '🔴' },
   { to: '/history', label: 'History', icon: '🗂️' },
-  { to: '/search', label: 'Search', icon: '🔎' },
-];
+  config.FEATURES.search && { to: '/search', label: 'Search', icon: '🔎' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
+].filter(Boolean);
+
+const HEALTH_INTERVAL_MS = 15000;
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
@@ -19,6 +23,17 @@ export default function AppLayout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [lastPath, setLastPath] = useState(location.pathname);
+  const [apiProblem, setApiProblem] = useState(null);
+
+  // Keep an eye on the backend so a stopped API or database shows up immediately.
+  usePolling(async () => {
+    try {
+      const h = await getHealth();
+      setApiProblem(h.database ? null : 'The backend is running but cannot reach its database.');
+    } catch (err) {
+      setApiProblem(`${err.message} (${config.API_BASE_URL})`);
+    }
+  }, HEALTH_INTERVAL_MS);
 
   // Close the mobile menu whenever the route changes.
   if (lastPath !== location.pathname) {
@@ -56,7 +71,6 @@ export default function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        {config.USE_MOCK && <div className={styles.mockBadge}>Demo mode · mock API</div>}
       </aside>
 
       {menuOpen && <div className={styles.overlay} onClick={() => setMenuOpen(false)} />}
@@ -82,6 +96,11 @@ export default function AppLayout() {
             Log out
           </Button>
         </header>
+        {apiProblem && (
+          <div className={styles.apiBanner} role="alert">
+            ⚠ {apiProblem}
+          </div>
+        )}
         <main className={styles.content}>
           <Suspense fallback={<Spinner label="Loading page…" />}>
             <Outlet />
