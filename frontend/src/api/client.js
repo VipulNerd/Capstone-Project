@@ -57,7 +57,18 @@ client.interceptors.response.use(
       else if (status >= 500) message = `Server error (${status}). Check the backend logs.`;
       else message = err.message;
     }
-    if (status === 401 && unauthorizedHandler && !err.config?.skipAuthRedirect) unauthorizedHandler();
+    if (status === 401 && err.config && !err.config.skipAuthRedirect) {
+      // A request sent with a token that has since been replaced (e.g. rotated in Settings while
+      // this request was in flight) is retried once with the current token instead of logging out.
+      const current = localStorage.getItem(TOKEN_KEY);
+      const sent = err.config.headers?.Authorization;
+      if (current && sent && sent !== `Bearer ${current}` && !err.config._retriedWithNewToken) {
+        err.config.headers.Authorization = `Bearer ${current}`;
+        err.config._retriedWithNewToken = true;
+        return client.request(err.config);
+      }
+      if (unauthorizedHandler) unauthorizedHandler();
+    }
     return Promise.reject({ message, status });
   },
 );
