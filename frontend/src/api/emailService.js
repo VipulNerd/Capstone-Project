@@ -1,21 +1,18 @@
 import client from './client';
-import config from '../config';
-import * as mock from './mockServer';
+import { fromApiDelivery } from './mappers';
 
-export async function sendMom(meetingId, formats) {
-  if (config.USE_MOCK) return mock.sendMom(meetingId, formats);
-  const { data } = await client.post(`/meetings/${meetingId}/send`, { formats });
-  return data;
+/**
+ * Emails the approved MOM to every participant with an email address plus the organiser.
+ * Sending is synchronous: the response already contains the per-recipient results.
+ * Calling it again resends to everyone.
+ */
+export async function distributeMom(meetingId, format) {
+  const { data } = await client.post(`/meetings/${meetingId}/distribute`, { format });
+  return { sent: data.sent, failed: data.failed, deliveries: data.deliveries.map(fromApiDelivery) };
 }
 
+/** Every delivery attempt for the meeting, oldest first. */
 export async function getDeliveries(meetingId) {
-  if (config.USE_MOCK) return mock.getDeliveries(meetingId);
   const { data } = await client.get(`/meetings/${meetingId}/deliveries`);
-  return data;
-}
-
-export async function retryDelivery(meetingId, email) {
-  if (config.USE_MOCK) return mock.retryDelivery(meetingId, email);
-  const { data } = await client.post(`/meetings/${meetingId}/deliveries/retry`, { email });
-  return data;
+  return data.map(fromApiDelivery);
 }

@@ -18,6 +18,13 @@ class Settings(BaseSettings):
 
     # --- OpenAI ---
     openai_api_key: str | None = None
+    # Optional. OpenAI-compatible base URL, or the Azure OpenAI endpoint. Empty = api.openai.com
+    # (the OpenAI SDK also reads OPENAI_BASE_URL from the process environment).
+    openai_base_url: str | None = None
+    # Azure OpenAI only: an API version such as "2025-04-01-preview" switches to the AzureOpenAI
+    # client, which calls models by deployment (needed for gpt-4o-transcribe-diarize, which
+    # Azure's /openai/v1 API does not serve). Empty = plain OpenAI client.
+    openai_api_version: str | None = None
     # Must support response_format="diarized_json" (speaker labels + timestamps).
     openai_transcribe_model: str = "gpt-4o-transcribe-diarize"
     openai_llm_model: str = "gpt-4o-mini"

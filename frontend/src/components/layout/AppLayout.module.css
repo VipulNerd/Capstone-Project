@@ -155,3 +155,12 @@
     display: none;
   }
 }
+
+.apiBanner {
+  margin: 16px 24px 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 14px;
+}

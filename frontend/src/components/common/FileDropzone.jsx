@@ -17,15 +17,22 @@ export default function FileDropzone({ file, onChange, accept, hint, error }) {
 
   if (file) {
     return (
-      <div className={styles.fileChip}>
-        <span aria-hidden="true">📄</span>
-        <div>
-          <strong>{file.name}</strong>
-          <div className="muted small">{formatBytes(file.size)}</div>
+      <div>
+        <div className={styles.fileChip}>
+          <span aria-hidden="true">📄</span>
+          <div>
+            <strong>{file.name}</strong>
+            <div className="muted small">{formatBytes(file.size)}</div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
+            Remove
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => onChange(null)}>
-          Remove
-        </Button>
+        {error && (
+          <p className="small" role="alert" style={{ color: 'var(--danger)', marginTop: 6 }}>
+            {error}
+          </p>
+        )}
       </div>
     );
   }

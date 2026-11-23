@@ -256,3 +256,21 @@ textarea.control {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- API token ---------- */
+.tokenBox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.tokenBox code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}

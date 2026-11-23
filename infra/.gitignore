@@ -1,0 +1,4 @@
+# Resource names and generated secrets (Postgres password, SECRET_KEY) written by provision.ps1
+.azure-state.env
+# Production secrets (copy of azure.env.example)
+azure.env

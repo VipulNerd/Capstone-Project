@@ -4,8 +4,9 @@ import { listMeetings } from '../api/meetingService';
 import useApi from '../hooks/useApi';
 import { Button, EmptyState, ErrorMessage, Input, Select, Spinner, StatusBadge } from '../components/common';
 import { STATUS_OPTIONS } from '../utils/status';
-import { formatDate } from '../utils/formatDate';
+import { formatDate, formatDateTime } from '../utils/formatDate';
 import { meetingLink } from './meetingLinks';
+import config from '../config';
 import styles from './pages.module.css';
 
 const SORTS = [
@@ -38,7 +39,9 @@ export default function HistoryPage() {
     );
     const [field, dir] = sort.split('-');
     list.sort((a, b) => {
-      const cmp = field === 'title' ? a.title.localeCompare(b.title) : String(a.date).localeCompare(String(b.date));
+      // Meetings without a date sort by when they were uploaded.
+      const key = (m) => m.date || String(m.createdAt).slice(0, 10);
+      const cmp = field === 'title' ? a.title.localeCompare(b.title) : key(a).localeCompare(key(b));
       return dir === 'asc' ? cmp : -cmp;
     });
     return list;
@@ -51,11 +54,13 @@ export default function HistoryPage() {
       <div className="page-header">
         <div>
           <h1>Meeting history</h1>
-          <p>Every meeting you have uploaded, with where it is in the workflow.</p>
+          <p>Every meeting you've recorded, with where it is in the workflow.</p>
         </div>
-        <Button variant="secondary" to="/search">
-          🔎 Semantic search
-        </Button>
+        {config.FEATURES.search && (
+          <Button variant="secondary" to="/search">
+            🔎 Semantic search
+          </Button>
+        )}
       </div>
 
       <div className="card">
@@ -84,14 +89,14 @@ export default function HistoryPage() {
           <EmptyState
             icon="🗂️"
             title={meetings?.length ? 'No meetings match your filters' : 'No meetings yet'}
-            message={meetings?.length ? 'Try clearing the filters.' : 'Uploaded meetings will appear here.'}
+            message={meetings?.length ? 'Try clearing the filters.' : 'Recorded meetings will appear here.'}
             action={
               meetings?.length ? (
                 <Button variant="secondary" onClick={() => setParams({}, { replace: true })}>
                   Clear filters
                 </Button>
               ) : (
-                <Button to="/meetings/new">Upload a meeting</Button>
+                <Button to="/meetings/new">Record a meeting</Button>
               )
             }
           />
@@ -106,9 +111,8 @@ export default function HistoryPage() {
                       Date {sort === 'date-asc' ? '▲' : sort === 'date-desc' ? '▼' : ''}
                     </button>
                   </th>
-                  <th>Source</th>
-                  <th>Participants</th>
-                  <th>Action items</th>
+                  <th>Organiser</th>
+                  <th>Started</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -117,19 +121,12 @@ export default function HistoryPage() {
                   <tr key={m.id}>
                     <td>
                       <Link to={meetingLink(m)}>{m.title}</Link>
-                      <div className="muted small">{m.fileName}</div>
                     </td>
                     <td>{formatDate(m.date)}</td>
-                    <td>{{ live: '🟣 Teams live', audio: '🎙️ Audio' }[m.sourceType] || '📄 Transcript'}</td>
-                    <td>{m.participantCount}</td>
-                    <td>{m.actionItemCount}</td>
+                    <td>{m.organizerName}</td>
+                    <td className="small muted">{formatDateTime(m.createdAt)}</td>
                     <td>
                       <StatusBadge status={m.status} />
-                      {m.failedDeliveries > 0 && (
-                        <div className="small" style={{ color: 'var(--danger)', marginTop: 4 }}>
-                          {m.failedDeliveries} failed
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))}

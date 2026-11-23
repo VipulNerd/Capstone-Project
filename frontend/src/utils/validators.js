@@ -3,15 +3,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const isEmail = (v) => EMAIL_RE.test(String(v).trim());
 export const isBlank = (v) => !v || !String(v).trim();
 
-// Voices separated by diarization but not yet matched to a person.
-export const isUnnamedSpeaker = (name) => /^speaker\s*\d+$/i.test(String(name).trim());
+// Voices the backend could not match to an invitee keep a placeholder like "Speaker 3A".
+export const isUnnamedSpeaker = (name) => /^speaker\s*\d+[a-z]?$/i.test(String(name).trim());
 
-export function validateLogin({ email, password }) {
+export function validateOrganiser({ name, email }) {
   const errors = {};
+  if (isBlank(name)) errors.name = 'Name is required';
   if (isBlank(email)) errors.email = 'Email is required';
   else if (!isEmail(email)) errors.email = 'Enter a valid email address';
-  if (isBlank(password)) errors.password = 'Password is required';
-  else if (password.length < 6) errors.password = 'Password must be at least 6 characters';
   return errors;
 }
 
@@ -41,6 +40,16 @@ export function validateActionItems(items) {
   });
 }
 
+/** Participants typed in when starting a meeting without a calendar invite. */
+export function validateNewMeeting({ title, participants }) {
+  const errors = {};
+  if (isBlank(title)) errors.title = 'Meeting title is required';
+  else if (title.trim().length > 255) errors.title = 'Title must be 255 characters or fewer';
+  const people = validateParticipants(participants);
+  if (hasErrors(people)) errors.participants = people;
+  return errors;
+}
+
 export const hasErrors = (errors) =>
   Array.isArray(errors)
     ? errors.some((e) => Object.keys(e).length > 0)
@@ -49,6 +58,7 @@ export const hasErrors = (errors) =>
 /** Validates a full MOM before approval. */
 export function validateMom(mom) {
   const errors = {};
+  if (isBlank(mom.title)) errors.title = 'Title is required';
   if (isBlank(mom.summary)) errors.summary = 'Summary is required';
   if (!mom.participants.length) errors.participantsGeneral = 'Add at least one participant';
   const participants = validateParticipants(mom.participants);

@@ -118,3 +118,15 @@
 .stepCurrent::before {
   background: var(--primary);
 }
+
+/* ---------- Transcript ---------- */
+.transcriptActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 10px;
+}
+
+.transcriptBox {
+  margin-top: 6px;
+}

@@ -1,20 +1,16 @@
 import { Button, Input, Select } from '../common';
 import styles from './mom.module.css';
 
-const newItem = () => ({ id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, task: '', owner: '', ownerEmail: '', deadline: '' });
+const newItem = () => ({ id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, task: '', owner: '', deadline: '' });
 
 function ActionItemRow({ item, index, participants, errors = {}, onChange, onRemove, disabled }) {
-  const ownerOptions = participants
-    .filter((p) => p.name?.trim())
-    .map((p) => ({ value: p.email || p.name, label: p.name }));
-
-  // Owner is stored by name + email; the select uses email (or name) as its value.
-  const ownerValue = item.ownerEmail || (participants.find((p) => p.name === item.owner)?.email ?? '');
-
-  const handleOwner = (value) => {
-    const p = participants.find((x) => (x.email || x.name) === value);
-    onChange({ ...item, owner: p?.name || '', ownerEmail: p?.email || '' });
-  };
+  // The backend stores the owner as a name. Offer the participants, and keep an owner
+  // the AI picked even if that person isn't in the participant list.
+  const names = [...new Set(participants.map((p) => p.name.trim()).filter(Boolean))];
+  const ownerOptions = names.map((n) => ({ value: n, label: n }));
+  if (item.owner && !names.includes(item.owner)) {
+    ownerOptions.push({ value: item.owner, label: `${item.owner} (not in participants)` });
+  }
 
   return (
     <tr>
@@ -30,8 +26,8 @@ function ActionItemRow({ item, index, participants, errors = {}, onChange, onRem
       </td>
       <td>
         <Select
-          value={ownerValue}
-          onChange={(e) => handleOwner(e.target.value)}
+          value={item.owner}
+          onChange={(e) => onChange({ ...item, owner: e.target.value })}
           options={ownerOptions}
           placeholder="Select owner"
           error={errors.owner}

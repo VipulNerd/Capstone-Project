@@ -1,85 +1,84 @@
 import { useState } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
-import { exportMom, getMom } from '../api/momService';
-import { getDeliveries, retryDelivery, sendMom } from '../api/emailService';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { getMeeting } from '../api/meetingService';
+import { exportMom, reopenMom } from '../api/momService';
+import { distributeMom, getDeliveries } from '../api/emailService';
 import useApi from '../hooks/useApi';
-import usePolling from '../hooks/usePolling';
 import { useToast } from '../context/ToastContext';
 import { Button, ConfirmDialog, ErrorMessage, Spinner } from '../components/common';
 import DeliveryTable from '../components/mom/DeliveryTable';
 import WorkflowStepper from '../components/mom/WorkflowStepper';
-import { formatDate } from '../utils/formatDate';
-import config from '../config';
+import { formatDate, formatDateTime } from '../utils/formatDate';
+import { recipientEmails } from '../utils/recipients';
+import { redirectFor } from './meetingLinks';
 import styles from './pages.module.css';
+
+const FORMATS = [
+  { value: 'pdf', label: 'PDF' },
+  { value: 'docx', label: 'Word (DOCX)' },
+];
 
 export default function DistributionPage() {
   const { id } = useParams();
   const toast = useToast();
-  const { data: mom, loading, error, refetch } = useApi(() => getMom(id), [id]);
+  const navigate = useNavigate();
+  const { data, setData, loading, error, refetch } = useApi(async () => {
+    const [meeting, deliveries] = await Promise.all([getMeeting(id), getDeliveries(id)]);
+    return { meeting, deliveries };
+  }, [id]);
 
-  const [formats, setFormats] = useState({ pdf: true, docx: false });
-  const [deliveries, setDeliveries] = useState([]);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [retrying, setRetrying] = useState(null);
+  const [format, setFormat] = useState('pdf');
+  const [confirm, setConfirm] = useState(null); // 'send' | 'reopen'
+  const [busy, setBusy] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
   const [downloading, setDownloading] = useState(null);
-  const [deliveriesLoaded, setDeliveriesLoaded] = useState(false);
 
-  const pendingCount = deliveries.filter((d) => d.status === 'queued').length;
-
-  // Load existing delivery records, then keep polling while any are still queued.
-  usePolling(
-    async () => {
-      const list = await getDeliveries(id);
-      setDeliveries(list);
-      setDeliveriesLoaded(true);
-    },
-    config.POLL_INTERVAL_MS,
-    !!mom && (!deliveriesLoaded || pendingCount > 0) && !sending,
-  );
-
-  if (loading && !mom) return <Spinner label="Loading…" />;
+  if (loading && !data) return <Spinner label="Loading…" />;
   if (error) return <ErrorMessage error={error} onRetry={refetch} />;
-  if (!mom) return null;
-  if (mom.status === 'draft_ready') return <Navigate to={`/meetings/${id}/review`} replace />;
+  if (!data) return null;
 
-  const selectedFormats = Object.keys(formats).filter((f) => formats[f]);
-  const recipients = mom.participants.filter((p) => p.email);
-  const noEmail = mom.participants.filter((p) => !p.email);
-  const sentCount = deliveries.filter((d) => d.status === 'sent').length;
-  const failedCount = deliveries.filter((d) => d.status === 'failed').length;
-  const alreadySent = deliveries.length > 0;
+  const { meeting, deliveries } = data;
+  const redirect = redirectFor(meeting, ['approved', 'distributed']);
+  if (redirect) return <Navigate to={redirect} replace />;
+
+  const recipients = recipientEmails(meeting.participants, meeting.organizerEmail);
+  const noEmail = meeting.participants.filter((p) => !p.email);
+  const alreadySent = meeting.status === 'distributed';
 
   const send = async () => {
-    setSending(true);
+    setBusy(true);
     try {
-      await sendMom(id, selectedFormats);
-      setDeliveries(await getDeliveries(id));
-      toast.success(`MOM queued for ${recipients.length} recipients`);
+      const result = await distributeMom(id, format);
+      setLastResult(result);
+      const [m, list] = await Promise.all([getMeeting(id), getDeliveries(id)]);
+      setData({ meeting: m, deliveries: list });
+      if (result.failed) toast.error(`Sent to ${result.sent}, failed for ${result.failed}. See the delivery log.`);
+      else toast.success(`MOM emailed to ${result.sent} recipient(s)`);
     } catch (err) {
       toast.error(err.message);
     } finally {
-      setSending(false);
-      setConfirmOpen(false);
+      setBusy(false);
+      setConfirm(null);
     }
   };
 
-  const retry = async (email) => {
-    setRetrying(email);
+  const reopen = async () => {
+    setBusy(true);
     try {
-      await retryDelivery(id, email);
-      setDeliveries(await getDeliveries(id));
+      await reopenMom(id);
+      toast.success('Approval withdrawn. You can edit the draft again.');
+      navigate(`/meetings/${id}/review`);
     } catch (err) {
       toast.error(err.message);
-    } finally {
-      setRetrying(null);
+      setBusy(false);
+      setConfirm(null);
     }
   };
 
-  const download = async (format) => {
-    setDownloading(format);
+  const download = async (fmt) => {
+    setDownloading(fmt);
     try {
-      await exportMom(id, format, `MOM - ${mom.title}`);
+      await exportMom(id, fmt, `MOM - ${meeting.title}`);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -91,8 +90,10 @@ export default function DistributionPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1>Distribute: {mom.title}</h1>
-          <p>{formatDate(mom.date)} · Approved. Choose the formats and send the minutes to every participant.</p>
+          <h1>Distribute: {meeting.title}</h1>
+          <p>
+            {formatDate(meeting.date)} · Approved by {meeting.approvedBy} on {formatDateTime(meeting.approvedAt)}
+          </p>
         </div>
         <div className="row">
           <Button variant="secondary" onClick={() => download('pdf')} loading={downloading === 'pdf'}>
@@ -108,7 +109,7 @@ export default function DistributionPage() {
       </div>
 
       <div className="card">
-        <WorkflowStepper status={sentCount && sentCount === deliveries.length ? 'sent' : 'approved'} />
+        <WorkflowStepper status={meeting.status} />
       </div>
 
       <div className="grid-2">
@@ -116,23 +117,20 @@ export default function DistributionPage() {
           <div className="card-title">
             <h2>Attachment format</h2>
           </div>
-          <div className={styles.checkboxRow}>
-            {['pdf', 'docx'].map((f) => (
-              <label key={f} className={styles.checkbox}>
+          <div className={styles.checkboxRow} role="radiogroup" aria-label="Attachment format">
+            {FORMATS.map((f) => (
+              <label key={f.value} className={styles.checkbox}>
                 <input
-                  type="checkbox"
-                  checked={formats[f]}
-                  onChange={(e) => setFormats((prev) => ({ ...prev, [f]: e.target.checked }))}
+                  type="radio"
+                  name="format"
+                  value={f.value}
+                  checked={format === f.value}
+                  onChange={() => setFormat(f.value)}
                 />
-                {f.toUpperCase()}
+                {f.label}
               </label>
             ))}
           </div>
-          {!selectedFormats.length && (
-            <p className="small" style={{ color: 'var(--danger)', marginTop: 8 }}>
-              Select at least one format.
-            </p>
-          )}
         </div>
 
         <div className="card">
@@ -140,11 +138,15 @@ export default function DistributionPage() {
             <h2>Recipients ({recipients.length})</h2>
           </div>
           <ul style={{ margin: 0, paddingLeft: 18 }} className="small">
-            {recipients.map((p) => (
-              <li key={p.email}>
-                {p.name} <span className="muted">&lt;{p.email}&gt;</span>
-              </li>
-            ))}
+            {recipients.map((email) => {
+              const p = meeting.participants.find((x) => x.email.toLowerCase() === email);
+              return (
+                <li key={email}>
+                  {p?.name || meeting.organizerName} <span className="muted">&lt;{email}&gt;</span>
+                  {email === meeting.organizerEmail.toLowerCase() && <span className="muted"> · organiser</span>}
+                </li>
+              );
+            })}
           </ul>
           {noEmail.length > 0 && (
             <p className="small" style={{ color: 'var(--warning)', marginTop: 10 }}>
@@ -155,38 +157,58 @@ export default function DistributionPage() {
       </div>
 
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <Button onClick={() => setConfirmOpen(true)} disabled={!selectedFormats.length || pendingCount > 0 || !recipients.length}>
-          {alreadySent ? 'Resend to all' : 'Send MOM to all participants'}
-        </Button>
+        {!alreadySent && (
+          <Button variant="secondary" onClick={() => setConfirm('reopen')}>
+            Withdraw approval & edit
+          </Button>
+        )}
+        <Button onClick={() => setConfirm('send')}>{alreadySent ? 'Resend to everyone' : 'Send MOM'}</Button>
       </div>
 
-      {alreadySent && (
-        <div className="card">
-          <div className="card-title">
-            <h2>Delivery status</h2>
-            <div className={styles.deliverySummary}>
-              <span>✅ {sentCount} sent</span>
-              <span>⏳ {pendingCount} queued</span>
-              <span>⚠️ {failedCount} failed</span>
-            </div>
-          </div>
-          <DeliveryTable deliveries={deliveries} onRetry={retry} retrying={retrying} />
+      {lastResult && (
+        <div className={`card ${styles.deliverySummary}`}>
+          <span>✅ {lastResult.sent} sent</span>
+          <span>⚠️ {lastResult.failed} failed</span>
+          {lastResult.failed > 0 && <span className="muted">Fix the address or mail settings, then resend.</span>}
         </div>
       )}
 
+      <div className="card">
+        <div className="card-title">
+          <h2>Delivery log</h2>
+        </div>
+        {deliveries.length ? (
+          <DeliveryTable deliveries={deliveries} />
+        ) : (
+          <p className="muted small">Nothing has been sent yet.</p>
+        )}
+      </div>
+
       <ConfirmDialog
-        open={confirmOpen}
+        open={confirm === 'send'}
         title={alreadySent ? 'Resend the MOM?' : 'Send the MOM?'}
         message={
           <>
-            The minutes will be emailed as <strong>{selectedFormats.map((f) => f.toUpperCase()).join(' + ')}</strong> to{' '}
-            <strong>{recipients.length} participants</strong>.
+            The minutes will be emailed as <strong>{format.toUpperCase()}</strong> to{' '}
+            <strong>{recipients.length} recipient(s)</strong>
+            {alreadySent && ', including everyone who already received it'}.
           </>
         }
         confirmLabel="Send now"
-        loading={sending}
+        loading={busy}
         onConfirm={send}
-        onCancel={() => setConfirmOpen(false)}
+        onCancel={() => setConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={confirm === 'reopen'}
+        title="Withdraw approval?"
+        message="The MOM goes back to draft so you can edit it. You'll need to approve it again before sending."
+        confirmLabel="Withdraw approval"
+        variant="danger"
+        loading={busy}
+        onConfirm={reopen}
+        onCancel={() => setConfirm(null)}
       />
     </div>
   );

@@ -1,14 +1,20 @@
 import { Button, Input } from '../common';
 import styles from './mom.module.css';
 
-const SOURCE_LABEL = { teams: 'Teams roster', speaker: 'Detected voice', manual: 'Added by you' };
+const SOURCE_LABEL = {
+  calendar: 'From the invite',
+  manual: 'Added by you',
+  detected: 'Heard in the meeting',
+};
 
-/** Editable list of { name, email } participants (used on upload and review). */
+const sourceHint = (p) => [SOURCE_LABEL[p.source], p.optional && 'optional'].filter(Boolean).join(' · ');
+
+/** Editable list of { name, email, source } participants. Email is optional. */
 export default function ParticipantList({ participants, onChange, errors = [], disabled }) {
   const update = (index, field, value) =>
     onChange(participants.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
   const remove = (index) => onChange(participants.filter((_, i) => i !== index));
-  const add = () => onChange([...participants, { name: '', email: '', source: 'manual' }]);
+  const add = () => onChange([...participants, { name: '', email: '', source: 'manual', optional: false }]);
 
   return (
     <div className={styles.list}>
@@ -18,7 +24,7 @@ export default function ParticipantList({ participants, onChange, errors = [], d
           <Input
             placeholder="Full name"
             value={p.name}
-            hint={!errors[i]?.name && SOURCE_LABEL[p.source]}
+            hint={!errors[i]?.name ? sourceHint(p) : undefined}
             onChange={(e) => update(i, 'name', e.target.value)}
             error={errors[i]?.name}
             disabled={disabled}

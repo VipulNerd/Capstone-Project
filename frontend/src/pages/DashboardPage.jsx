@@ -20,8 +20,9 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { data: meetings, loading, error, refetch } = useApi(listMeetings, []);
 
-  const count = (pred) => (meetings || []).filter(pred).length;
-  const pending = (meetings || []).filter((m) => m.status === 'draft_ready');
+  const count = (status) => (meetings || []).filter((m) => m.status === status).length;
+  const pending = (meetings || []).filter((m) => m.status === 'draft');
+  const inProgress = (meetings || []).filter((m) => ['recording', 'finalizing', 'failed'].includes(m.status));
 
   return (
     <div className="page">
@@ -30,12 +31,7 @@ export default function DashboardPage() {
           <h1>Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}</h1>
           <p>Here's where your meeting minutes stand.</p>
         </div>
-        <div className="row">
-          <Button variant="secondary" to="/meetings/new">
-            ⬆ Upload recording
-          </Button>
-          <Button to="/live/new">● Start live capture</Button>
-        </div>
+        <Button to="/meetings/new">● Record a meeting</Button>
       </div>
 
       <ErrorMessage error={error} onRetry={refetch} />
@@ -47,15 +43,45 @@ export default function DashboardPage() {
           <>
             <div className={styles.stats}>
               <StatCard value={meetings.length} label="Total meetings" />
-              <StatCard value={pending.length} label="Awaiting your approval" />
-              <StatCard value={count((m) => m.status === 'sent')} label="Minutes sent" />
-              <StatCard value={count((m) => m.failedDeliveries > 0)} label="With failed deliveries" />
+              <StatCard value={pending.length} label="Awaiting approval" />
+              <StatCard value={count('distributed')} label="Minutes distributed" />
+              <StatCard value={count('failed')} label="Processing failed" />
             </div>
+
+            {inProgress.length > 0 && (
+              <div className="card">
+                <div className="card-title">
+                  <h2>In progress</h2>
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <tbody>
+                      {inProgress.map((m) => (
+                        <tr key={m.id}>
+                          <td>
+                            <strong>{m.title}</strong>
+                            <div className="muted small">{formatDate(m.date)}</div>
+                          </td>
+                          <td>
+                            <StatusBadge status={m.status} />
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <Button size="sm" variant="secondary" to={meetingLink(m)}>
+                              {m.status === 'recording' ? 'Continue recording' : m.status === 'failed' ? 'See error' : 'View progress'}
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {pending.length > 0 && (
               <div className="card">
                 <div className="card-title">
-                  <h2>Needs your review</h2>
+                  <h2>Needs review</h2>
                 </div>
                 <div className="table-wrap">
                   <table className="table">
@@ -64,7 +90,9 @@ export default function DashboardPage() {
                         <tr key={m.id}>
                           <td>
                             <strong>{m.title}</strong>
-                            <div className="muted small">{formatDate(m.date)}</div>
+                            <div className="muted small">
+                              {formatDate(m.date)} · {m.organizerName}
+                            </div>
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <Button size="sm" to={`/meetings/${m.id}/review`}>
@@ -90,8 +118,8 @@ export default function DashboardPage() {
                 <EmptyState
                   icon="🎙️"
                   title="No meetings yet"
-                  message="Start a live capture in your next Teams meeting, or upload a recording."
-                  action={<Button to="/live/new">Capture a live meeting</Button>}
+                  message="Record your next meeting and the AI will write the transcript and draft the minutes."
+                  action={<Button to="/meetings/new">Record a meeting</Button>}
                 />
               ) : (
                 <div className="table-wrap">
@@ -100,7 +128,7 @@ export default function DashboardPage() {
                       <tr>
                         <th>Meeting</th>
                         <th>Date</th>
-                        <th>Action items</th>
+                        <th>Organiser</th>
                         <th>Status</th>
                       </tr>
                     </thead>
@@ -111,7 +139,7 @@ export default function DashboardPage() {
                             <Link to={meetingLink(m)}>{m.title}</Link>
                           </td>
                           <td>{formatDate(m.date)}</td>
-                          <td>{m.actionItemCount}</td>
+                          <td>{m.organizerName}</td>
                           <td>
                             <StatusBadge status={m.status} />
                           </td>

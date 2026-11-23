@@ -1,7 +1,7 @@
-export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'mp4', 'webm', 'ogg'];
-export const TRANSCRIPT_EXTENSIONS = ['txt', 'vtt', 'srt', 'docx'];
+// Must match backend/app/services/storage.py AUDIO_EXTENSIONS
+export const AUDIO_EXTENSIONS = ['webm', 'ogg', 'wav', 'mp3', 'm4a', 'flac', 'mp4', 'mpeg', 'mpga'];
 
-export const getExtension = (name) => name.split('.').pop().toLowerCase();
+export const getExtension = (name) => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
 
 export function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -11,12 +11,19 @@ export function formatBytes(bytes) {
 }
 
 /** Returns an error message, or null if the file is acceptable. */
-export function validateFile(file, sourceType, maxMb) {
+export function validateAudioFile(file, maxMb) {
   if (!file) return 'Please choose a file';
-  const allowed = sourceType === 'audio' ? AUDIO_EXTENSIONS : TRANSCRIPT_EXTENSIONS;
-  if (!allowed.includes(getExtension(file.name))) {
-    return `Unsupported file type. Allowed: ${allowed.join(', ')}`;
+  if (!AUDIO_EXTENSIONS.includes(getExtension(file.name))) {
+    return `Unsupported file type. Allowed: ${AUDIO_EXTENSIONS.join(', ')}`;
   }
-  if (file.size > maxMb * 1024 * 1024) return `File is larger than ${maxMb} MB`;
+  if (!file.size) return 'The file is empty';
+  if (file.size > maxMb * 1024 * 1024) return `File is larger than ${maxMb} MB. Split it or compress it first.`;
+  return null;
+}
+
+export function validateIcsFile(file) {
+  if (!file) return 'Choose the meeting invite (.ics)';
+  if (getExtension(file.name) !== 'ics') return 'Choose an .ics calendar invite';
+  if (file.size > 1024 * 1024) return 'Invite file is larger than 1 MB';
   return null;
 }
