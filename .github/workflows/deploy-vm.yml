@@ -6,7 +6,7 @@ name: Deploy to Azure VM
 # One-time setup (see deploy/vm/README.md):
 #   Repository VARIABLES:  VM_HOST  (e.g. mom-xxxx.southindia.cloudapp.azure.com)   VM_USER (azureuser)
 #   Repository SECRETS:    VM_SSH_KEY        private key of the deploy key pair
-#                          VM_KNOWN_HOSTS    output of: ssh-keyscan -t ed25519 <VM_HOST>
+#                          VM_KNOWN_HOSTS    optional; defaults to deploy/vm/known_hosts (the VM's public host key)
 #   Until VM_HOST is set, the deploy job is skipped (not failed).
 
 on:
@@ -61,9 +61,31 @@ jobs:
         env:
           VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
           VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+          # Public fingerprint of the deploy key the VM accepts (from: ssh-keygen -lf ~/.ssh/mom_vm_ci.pub).
+          EXPECTED_KEY_FP: ${{ vars.VM_SSH_KEY_FP || 'SHA256:MrVxkngFbbb5fSztSaKBTVIRfZ7HZQXMtYFrCTdUtFg' }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # Clean up common paste mistakes: Windows line breaks, PowerShell ">>" prompts, stray spaces.
+          clean() { printf '%s\n' "$1" | tr -d '\r' | sed -e 's/^>> *//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true; }
+          clean "$VM_SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          if [ -n "$VM_KNOWN_HOSTS" ]; then clean "$VM_KNOWN_HOSTS" | grep -v '^#' > ~/.ssh/known_hosts
+          else cp deploy/vm/known_hosts ~/.ssh/known_hosts; fi
+
+          # Diagnostics (fingerprints are public; the key itself is never printed).
+          echo "VM_SSH_KEY: $(wc -l < ~/.ssh/id_ed25519) lines, first: $(head -c 36 ~/.ssh/id_ed25519)"
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub; then
+            echo "::error::VM_SSH_KEY is not a valid private key. Paste the whole file ~/.ssh/mom_vm_ci, BEGIN to END lines included."
+            exit 1
+          fi
+          echo "Key fingerprint: $(ssh-keygen -lf ~/.ssh/id_ed25519.pub)"
+          if [ -n "$EXPECTED_KEY_FP" ] && ! ssh-keygen -lf ~/.ssh/id_ed25519.pub | grep -qF "$EXPECTED_KEY_FP"; then
+            echo "::error::VM_SSH_KEY is a different key than the one the VM accepts ($EXPECTED_KEY_FP). Paste ~/.ssh/mom_vm_ci again."
+            exit 1
+          fi
+          if ! ssh-keygen -F "${{ vars.VM_HOST }}" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::known_hosts has no entry for '${{ vars.VM_HOST }}'. Check the VM_HOST variable (host name only, no https://)."
+            exit 1
+          fi
+          echo "Host key entry found for ${{ vars.VM_HOST }}"
       - name: Deploy
         run: bash deploy/vm/deploy.sh "${{ vars.VM_USER || 'azureuser' }}@${{ vars.VM_HOST }}"
