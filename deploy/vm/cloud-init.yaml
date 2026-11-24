@@ -1,0 +1,35 @@
+#cloud-config
+# First-boot setup for the MinutesAI VM (Ubuntu 24.04). Passed to `az vm create --custom-data`.
+# Contains no secrets: the app's .env is copied separately over SSH.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - unattended-upgrades
+  - ca-certificates
+  - curl
+
+write_files:
+  # Daily database dump, kept for 7 days (in addition to Azure disk snapshots if you add them)
+  - path: /etc/cron.daily/mom-db-backup
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      set -e
+      cd /opt/mom/app/deploy/vm 2>/dev/null || exit 0
+      docker compose exec -T db pg_dump -U mom -d mom_db -Fc -f "/backups/mom_db-$(date +%F).dump"
+      find /opt/mom/backups -name 'mom_db-*.dump' -mtime +7 -delete
+
+  # Small swap file: the frontend image build (npm) can briefly exceed 4 GB RAM
+  - path: /etc/sysctl.d/99-mom.conf
+    content: |
+      vm.swappiness=10
+
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker azureuser
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - mkdir -p /opt/mom/backups && chown -R azureuser:azureuser /opt/mom
+  - systemctl enable --now unattended-upgrades

@@ -1,0 +1,77 @@
+# Production stack for ONE Azure VM (Ubuntu + Docker). Everything runs on the VM:
+#   caddy (HTTPS, ports 80/443) -> frontend (nginx: SPA + /api proxy) -> backend (FastAPI) -> db (PostgreSQL)
+# Only Caddy is reachable from the internet; db and backend have no published ports.
+#
+# Secrets/config come from deploy/vm/.env on the VM (never committed; see .env.example).
+# Used by deploy/vm/deploy.sh:  docker compose -f deploy/vm/docker-compose.yml up -d --build
+name: mom
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/vm/.env}
+      POSTGRES_DB: mom_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ${BACKUP_DIR:-/opt/mom/backups}:/backups   # outside the app folder, survives redeploys
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mom -d mom_db"]
+      interval: 5s
+      retries: 20
+
+  backend:
+    build: ../../backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://mom:${POSTGRES_PASSWORD}@db:5432/mom_db
+      STORAGE_BACKEND: local
+      AUDIO_DIR: /data/audio
+      EMAIL_OUTBOX_DIR: /data/outbox
+      PUBLIC_BASE_URL: https://${SITE_DOMAIN:?set SITE_DOMAIN in deploy/vm/.env}/api
+      CORS_ORIGINS: '["https://${SITE_DOMAIN}"]'
+      RESUME_ON_STARTUP: "true"
+    volumes:
+      - appdata:/data          # audio chunks survive restarts and redeploys
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5)); sys.exit(0 if d['database'] else 1)"]
+      interval: 15s
+      timeout: 10s
+      start_period: 60s        # migrations run on start
+      retries: 5
+
+  frontend:
+    build: ../../frontend      # VITE_API_BASE_URL defaults to /api (same origin, no CORS needed)
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # TLS certificates (keep, or Let's Encrypt rate limits hit)
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  pgdata:
+  appdata:
+  caddy_data:
+  caddy_config:
