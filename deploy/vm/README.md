@@ -42,7 +42,7 @@ Rollback: `git checkout <previous-commit>` and run the same command (the databas
 Every push to `main` runs the tests, then `deploy.sh` over SSH. No Azure permissions are needed.
 Repository settings → Secrets and variables → Actions:
 - Variables: `VM_HOST` = the VM's DNS name, `VM_USER` = `azureuser`
-- Secrets: `VM_SSH_KEY` = contents of the deploy private key, `VM_KNOWN_HOSTS` = output of `ssh-keyscan -t ed25519 <VM_HOST>`
+- Secrets: `VM_SSH_KEY` = contents of the deploy private key, `VM_KNOWN_HOSTS` is optional (the VM's public host key is pinned in `deploy/vm/known_hosts`; update that file if the VM is recreated). The workflow checks the key's fingerprint against `vars.VM_SSH_KEY_FP` (default: the current deploy key) and prints a clear error if the wrong key was pasted
 
 The SSH rule only allows your IP, so for CI/CD port 22 must also accept GitHub's runners:
 either open 22 to the internet (key-only login, password login is disabled) or use a self-hosted runner.
