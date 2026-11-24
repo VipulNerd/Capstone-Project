@@ -10,9 +10,15 @@ from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 from app.models import ActionItem, AudioChunk, AudioTrack, ChunkStatus, Meeting, MeetingStatus, Participant, ParticipantSource
 from app.services.ai import AIClient, RawLine, RefinedLine
-from app.services.storage import delete_file
+from app.services.storage import delete_file, get_audio_store
 
 log = logging.getLogger(__name__)
+
+
+def _transcribe_chunk(ai: AIClient, key: str):
+    # Blob storage: download to a temporary file first; local storage: use the file directly.
+    with get_audio_store().local_copy(key) as path:
+        return ai.transcribe_segments(path)
 
 _LABEL = re.compile(r"^M(\d+)-(.+)$")
 
@@ -63,7 +69,7 @@ def _transcribe_pending(db, m: Meeting, ai: AIClient, skip_failed: bool) -> None
     if todo:
         # Network-bound OpenAI calls run in threads; DB writes stay on this thread.
         with ThreadPoolExecutor(max_workers=max(1, s.transcribe_concurrency)) as pool:
-            futures = {pool.submit(ai.transcribe_segments, c.path): c for c in todo}
+            futures = {pool.submit(_transcribe_chunk, ai, c.path): c for c in todo}
             for fut in as_completed(futures):
                 c = futures[fut]
                 try:
@@ -146,3 +152,30 @@ def finalize_meeting(meeting_id: int, session_factory: sessionmaker, ai: AIClien
             m.status = MeetingStatus.failed
             m.error_message = str(e) if isinstance(e, PipelineError) else f"{type(e).__name__}: {e}"
         db.commit()
+
+
+def resume_interrupted(session_factory: sessionmaker, ai_factory) -> int:
+    """Re-run finalization for meetings left in "finalizing" because the process stopped
+    mid-job (deploy, crash, or Container Apps scaling to zero). Finished stages are kept,
+    so already-transcribed chunks are not sent to the AI again. Returns how many resumed.
+    Run with a single replica: two processes resuming the same meeting would duplicate work."""
+    from sqlalchemy import select
+
+    with session_factory() as db:
+        ids = list(db.scalars(select(Meeting.id).where(Meeting.status == MeetingStatus.finalizing)))
+    if not ids:
+        return 0
+    log.info("Resuming %d interrupted meeting(s): %s", len(ids), ids)
+    try:
+        ai = ai_factory()
+    except Exception as e:  # noqa: BLE001 - e.g. OPENAI_API_KEY missing
+        with session_factory() as db:
+            for mid in ids:
+                m = db.get(Meeting, mid)
+                m.status = MeetingStatus.failed
+                m.error_message = f"Processing was interrupted and could not resume ({e}). Retry once fixed."
+            db.commit()
+        return 0
+    for mid in ids:
+        finalize_meeting(mid, session_factory, ai)
+    return len(ids)

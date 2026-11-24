@@ -1,5 +1,6 @@
 // Real-AI smoke test against a running system (local or Azure). Creates one account and one meeting.
 //   E2E_BASE_URL=https://<frontend-fqdn> E2E_AUDIO=C:\path\two_speakers.m4a npm run test:smoke
+//   (frontend and backend on different hosts: also set E2E_API_URL=https://<backend-fqdn>)
 // E2E_AUDIO: a short real recording with 2+ voices (≤ 25 MB). Without it only the health and
 // sign-up checks run.
 import { expect, test } from '@playwright/test';
@@ -12,7 +13,10 @@ test.beforeAll(() => {
 });
 
 test('backend and database are healthy', async ({ request, baseURL }) => {
-  const res = await request.get(`${baseURL}/api/health`);
+  // Same-origin deployments proxy the API at /api. When the frontend calls the backend directly
+  // (e.g. Static Web Apps + Container Apps), set E2E_API_URL to the backend's URL.
+  const api = process.env.E2E_API_URL || `${baseURL}/api`;
+  const res = await request.get(`${api.replace(/\/$/, '')}/health`);
   expect(res.status()).toBe(200);
   expect(await res.json()).toMatchObject({ status: 'ok', database: true });
 });

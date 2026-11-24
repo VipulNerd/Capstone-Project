@@ -7,6 +7,8 @@ from pathlib import Path
 _tmp = tempfile.mkdtemp(prefix="mom-tests-")
 os.environ["AUDIO_DIR"] = os.path.join(_tmp, "audio")
 os.environ["EMAIL_OUTBOX_DIR"] = os.path.join(_tmp, "outbox")
+os.environ["STORAGE_BACKEND"] = "local"
+os.environ["RESUME_ON_STARTUP"] = "false"  # tests call resume_interrupted() directly
 os.environ["SECRET_KEY"] = "test-secret"
 os.environ["MS_CLIENT_ID"] = ""
 
