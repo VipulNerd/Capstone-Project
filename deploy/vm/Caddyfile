@@ -1,0 +1,23 @@
+# Caddy gets and renews a Let's Encrypt certificate for SITE_DOMAIN automatically
+# (e.g. mom-xxxx.southindia.cloudapp.azure.com) and redirects HTTP to HTTPS.
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	request_body {
+		max_size 30MB # audio chunks up to 25 MB (backend MAX_CHUNK_MB)
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# nginx serves the SPA and forwards /api/* to the backend
+	reverse_proxy frontend:80 {
+		transport http {
+			read_timeout 5m
+		}
+	}
+}

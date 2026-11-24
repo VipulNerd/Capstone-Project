@@ -1,6 +1,40 @@
 # Deploying to Azure
 
-The whole system runs in **one existing resource group**. Users of the app never need an Azure account. They sign in with the app's own account and API token.
+## Current deployment: one Azure VM (live)
+
+**https://mom-f5mqx.southindia.cloudapp.azure.com**
+
+The lab sandbox (resource group `tpl-azure-aks--mazeazusrqn9-kfhj-sbx`, South India) only allows certain
+resource types: Container Apps, PostgreSQL Flexible Server and Static Web Apps are blocked by its
+"Allowed resource types" policy. The app therefore runs on one Ubuntu VM with Docker Compose. How it works,
+how to redeploy and how to operate it: **[deploy/vm/README.md](../deploy/vm/README.md)**.
+
+| Azure resource (all in `tpl-azure-aks--mazeazusrqn9-kfhj-sbx`) | Details |
+|---|---|
+| VM `mom-vm` | Standard_B2als_v2 (2 vCPU, 4 GB), Ubuntu 24.04 LTS, 64 GB Standard SSD `mom-vm-osdisk` |
+| Public IP `mom-vm-ip` | Static `20.235.35.11`, DNS `mom-f5mqx.southindia.cloudapp.azure.com` |
+| Network security group `mom-vm-nsg` | 80/443 from the internet; 22 only from the admin's IP |
+| Virtual network `mom-vnet` | 10.20.0.0/24, subnet `default` |
+| Azure OpenAI (existing Foundry resource `audio-transcription-ai`) | Deployments `gpt-4o-transcribe-diarize`, `gpt-5.1` |
+
+| Secret | Where it lives |
+|---|---|
+| PostgreSQL password, `SECRET_KEY`, Azure OpenAI key, SMTP password | `/opt/mom/.env` on the VM (mode 600). Never in git or GitHub |
+| SSH admin key | `~/.ssh/mom_vm` on the admin's PC |
+| SSH deploy key for CI/CD | `~/.ssh/mom_vm_ci` on the admin's PC; GitHub secret `VM_SSH_KEY` |
+
+Redeploy by hand (repo root, Git Bash): `SSH_OPTS="-i ~/.ssh/mom_vm" deploy/vm/deploy.sh azureuser@mom-f5mqx.southindia.cloudapp.azure.com`.
+Automatically: `.github/workflows/deploy-vm.yml` on every push to `main`, once its repository variables and secrets are set.
+
+Cost: about $36–40/month while the VM runs. `az vm deallocate -g tpl-azure-aks--mazeazusrqn9-kfhj-sbx -n mom-vm`
+stops compute billing (about $9/month remains for the disk and IP); `az vm start` brings it back with all data.
+
+---
+
+## Alternative: Azure Container Apps (needs a subscription that allows it)
+
+The rest of this guide describes the Container Apps deployment (`infra/provision.ps1`). Use it where
+`Microsoft.App` and `Microsoft.DBforPostgreSQL` are allowed. The whole system runs in **one existing resource group**. Users of the app never need an Azure account. They sign in with the app's own account and API token.
 
 ```
 Browser ──HTTPS──> mom-frontend  (Container App, nginx, public)
