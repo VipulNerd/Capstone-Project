@@ -67,7 +67,13 @@ jobs:
           install -m 700 -d ~/.ssh
           # Clean up common paste mistakes: Windows line breaks, PowerShell ">>" prompts, stray spaces.
           clean() { printf '%s\n' "$1" | tr -d '\r' | sed -e 's/^>> *//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true; }
-          clean "$VM_SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          # Rebuild the private key from its base64 body, so lost or extra line breaks don't matter.
+          raw="$(printf '%s' "$VM_SSH_KEY" | tr -d '\r')"
+          body="$(printf '%s' "$raw" | sed -e 's/-----[A-Z ]*-----//g' -e 's/>>//g' | tr -d ' \t\n')"
+          has_header=no; case "$raw" in *"BEGIN OPENSSH PRIVATE KEY"*) has_header=yes;; esac
+          echo "::notice::VM_SSH_KEY received: ${#raw} characters, $(printf '%s\n' "$raw" | grep -c .) non-empty lines, BEGIN line: $has_header, key body: ${#body} characters (expected for the current deploy key: about 418 / 7 / yes / 344; 0 characters means the secret is empty or not visible to this job)"
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s\n' "$body" | fold -w 70; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           if [ -n "$VM_KNOWN_HOSTS" ]; then clean "$VM_KNOWN_HOSTS" | grep -v '^#' > ~/.ssh/known_hosts
           else cp deploy/vm/known_hosts ~/.ssh/known_hosts; fi
 
