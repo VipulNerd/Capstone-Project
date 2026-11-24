@@ -13,3 +13,4 @@ reportlab==5.1.0
 httpx==0.28.1
 icalendar==7.3.0
 cryptography==50.0.2
+azure-storage-blob==12.31.1

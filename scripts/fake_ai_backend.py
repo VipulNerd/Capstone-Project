@@ -27,6 +27,8 @@ os.environ["EMAIL_BACKEND"] = "console"
 os.environ["SECRET_KEY"] = "fake-backend-secret"
 os.environ["MS_CLIENT_ID"] = ""
 os.environ["RETAIN_AUDIO"] = "true"
+os.environ["STORAGE_BACKEND"] = "local"
+os.environ["RESUME_ON_STARTUP"] = "false"
 os.environ["CORS_ORIGINS"] = '["http://localhost:5173","http://localhost:5174"]'
 
 BACKEND = Path(__file__).resolve().parent.parent / "backend"

@@ -32,9 +32,17 @@ class Settings(BaseSettings):
     refine_batch_lines: int = 120        # transcript lines per LLM refinement call
 
     # --- Audio chunks streamed by the overlay agent ---
+    # "local" keeps chunks under AUDIO_DIR (dev, tests). "blob" uses Azure Blob Storage, which
+    # survives container restarts and scale-to-zero (required on Azure Container Apps).
+    storage_backend: Literal["local", "blob"] = "local"
     audio_dir: Path = Path("./data/audio")
+    azure_storage_connection_string: str | None = None
+    azure_storage_container: str = "audio"
     max_chunk_mb: int = 25               # OpenAI transcription limit per file
     retain_audio: bool = False           # delete raw audio once transcribed (privacy)
+
+    # On startup, resume meetings left in "finalizing" by a restart or scale-to-zero.
+    resume_on_startup: bool = True
 
     # --- Microsoft Graph (Outlook calendar). Leave client_id empty to disable. ---
     ms_client_id: str | None = None

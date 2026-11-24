@@ -1,0 +1,21 @@
+# Secrets: never commit real environment files anywhere in the repo
+.env
+.env.*
+!.env.example
+*.local
+
+# Azure deployment state/secrets (see infra/)
+infra/azure.env
+infra/.azure-state.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python / Node build output
+__pycache__/
+*.pyc
+node_modules/
+dist/
