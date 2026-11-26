@@ -52,7 +52,9 @@ export default function DistributionPage() {
       setLastResult(result);
       const [m, list] = await Promise.all([getMeeting(id), getDeliveries(id)]);
       setData({ meeting: m, deliveries: list });
-      if (result.failed) toast.error(`Sent to ${result.sent}, failed for ${result.failed}. See the delivery log.`);
+      if (result.emailMode === 'console')
+        toast.error("Not emailed: email sending isn't set up on this server. Ask the admin to configure SMTP.");
+      else if (result.failed) toast.error(`Sent to ${result.sent}, failed for ${result.failed}. See the delivery log.`);
       else toast.success(`MOM emailed to ${result.sent} recipient(s)`);
     } catch (err) {
       toast.error(err.message);
@@ -165,7 +167,14 @@ export default function DistributionPage() {
         <Button onClick={() => setConfirm('send')}>{alreadySent ? 'Resend to everyone' : 'Send MOM'}</Button>
       </div>
 
-      {lastResult && (
+      {lastResult?.emailMode === 'console' && (
+        <div className={`card ${styles.deliverySummary}`} role="alert">
+          <span>⚠️ Nothing was emailed. This server has no email account configured, so the MOM was only saved on the server.</span>
+          <span className="muted">The admin sets EMAIL_BACKEND=smtp and SMTP details (see deploy/vm/README.md), then you can resend.</span>
+        </div>
+      )}
+
+      {lastResult && lastResult.emailMode !== 'console' && (
         <div className={`card ${styles.deliverySummary}`}>
           <span>✅ {lastResult.sent} sent</span>
           <span>⚠️ {lastResult.failed} failed</span>

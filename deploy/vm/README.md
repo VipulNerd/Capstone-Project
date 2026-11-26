@@ -38,6 +38,18 @@ Rollback: `git checkout <previous-commit>` and run the same command (the databas
 | Restore a backup | `docker compose exec -T db pg_restore -U mom -d mom_db --clean /backups/mom_db-YYYY-MM-DD.dump` |
 | Stop paying for compute | `az vm deallocate -g <rg> -n mom-vm` (start again: `az vm start`) |
 
+## Email (sending MOMs)
+With `EMAIL_BACKEND=console` (the default) **nothing is emailed**: "Send MOM" only saves `.eml` files in the
+backend's `/data/outbox`, and the app now warns about this. `/api/health` shows `"email": "console" | "smtp" | "misconfigured"`.
+
+To send real email through Gmail:
+1. On the sending Gmail account, turn on 2-Step Verification, then create an app password at
+   https://myaccount.google.com/apppasswords.
+2. From the repo root in PowerShell, run `.\deploy\vm\set-email.ps1`. It asks for the address and the app password
+   (hidden), writes them to `/opt/mom/.env` (backup: `.env.bak`), restarts the backend and tests the Gmail login.
+3. Failed sends are listed per recipient in the app's delivery log with the reason (wrong password, refused address, ...).
+   The first emails may land in Spam.
+
 ## CI/CD (GitHub Actions, `.github/workflows/deploy-vm.yml`)
 Every push to `main` runs the tests, then `deploy.sh` over SSH. No Azure permissions are needed.
 Repository settings → Secrets and variables → Actions:

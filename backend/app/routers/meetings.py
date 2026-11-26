@@ -38,7 +38,7 @@ from app.schemas import (
 from app.security import CurrentUser
 from app.services.ai import AIClient, get_ai_client
 from app.services.calendar import CalendarError, CalendarEvent, CalendarNotConnected, MicrosoftCalendar, parse_ics
-from app.services.emailer import Attachment, Mailer, get_mailer
+from app.services.emailer import Attachment, EmailError, Mailer, get_mailer
 from app.services.exporter import export_mom, export_transcript
 from app.services.pipeline import finalize_meeting
 from app.services.storage import AUDIO_EXTENSIONS, delete_meeting_audio, save_chunk
@@ -404,14 +404,20 @@ def distribute(
             mailer.send(to, subject, text, attachment)
             new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.sent))
         except Exception as e:  # noqa: BLE001 - record per-recipient failure, keep going
-            new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.failed, error=f"{type(e).__name__}: {e}"))
+            error = str(e) if isinstance(e, EmailError) else f"{type(e).__name__}: {e}"
+            new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.failed, error=error[:1000]))
     m.deliveries.extend(new)
 
     sent = sum(d.status == DeliveryStatus.sent for d in new)
     if sent:
         m.status = MeetingStatus.distributed
     db.commit()
-    return DistributeResult(sent=sent, failed=len(new) - sent, deliveries=[DeliveryOut.model_validate(d) for d in new])
+    return DistributeResult(
+        sent=sent,
+        failed=len(new) - sent,
+        deliveries=[DeliveryOut.model_validate(d) for d in new],
+        email_mode=get_settings().email_backend,
+    )
 
 
 @router.get("/{meeting_id}/deliveries", response_model=list[DeliveryOut])

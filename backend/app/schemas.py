@@ -180,3 +180,5 @@ class DistributeResult(BaseModel):
     sent: int
     failed: int
     deliveries: list[DeliveryOut]
+    # "console": the server is not configured to send email; messages were only saved on the server.
+    email_mode: Literal["console", "smtp"] = "smtp"
