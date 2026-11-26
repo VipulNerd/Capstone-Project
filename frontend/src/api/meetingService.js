@@ -7,9 +7,9 @@ import { fromApiChunk, fromApiMeeting, fromApiSummary, toApiParticipants } from 
  * POST /meetings. Either a calendar event (participants come from the invite)
  * or a title + participants typed in by the user. Consent is mandatory.
  */
-export async function startMeeting({ calendarEventId, title, participants = [] }) {
+export async function startMeeting({ calendarEventId, calendarProvider, title, participants = [] }) {
   const body = { recording_consent: true };
-  if (calendarEventId) body.calendar_event_id = calendarEventId;
+  if (calendarEventId) Object.assign(body, { calendar_event_id: calendarEventId, calendar_provider: calendarProvider });
   else Object.assign(body, { title: title.trim(), participants: toApiParticipants(participants) });
   const { data } = await client.post('/meetings', body);
   return fromApiMeeting(data);

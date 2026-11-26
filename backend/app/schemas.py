@@ -74,7 +74,13 @@ class AttendeeOut(BaseModel):
     optional: bool
 
 
+class CalendarProviderOut(BaseModel):
+    provider: Literal["google", "microsoft"]
+    configured: bool
+
+
 class CalendarEventOut(BaseModel):
+    provider: Literal["google", "microsoft"] = "microsoft"
     event_id: str
     title: str
     start: datetime | None
@@ -109,6 +115,8 @@ class MeetingStart(BaseModel):
         description="User confirms participants were informed and agree to the meeting being recorded."
     )
     calendar_event_id: str | None = None
+    # Which connected calendar calendar_event_id comes from (GET /calendar/events returns it).
+    calendar_provider: Literal["google", "microsoft"] = "microsoft"
     title: str | None = Field(default=None, min_length=1, max_length=255)
     participants: list[ParticipantIn] = Field(default_factory=list)
 

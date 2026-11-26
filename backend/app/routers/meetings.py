@@ -22,7 +22,7 @@ from app.models import (
     ParticipantSource,
     User,
 )
-from app.routers.calendar import get_connection, ms_optional
+from app.routers.calendar import Calendars, get_connection, require_calendar
 from app.schemas import (
     ApproveRequest,
     ChunkOut,
@@ -37,7 +37,7 @@ from app.schemas import (
 )
 from app.security import CurrentUser
 from app.services.ai import AIClient, get_ai_client
-from app.services.calendar import CalendarError, CalendarEvent, CalendarNotConnected, MicrosoftCalendar, parse_ics
+from app.services.calendar import CalendarError, CalendarEvent, CalendarNotConnected, parse_ics
 from app.services.emailer import Attachment, EmailError, Mailer, actually_emails, get_mailer
 from app.services.exporter import export_mom, export_transcript
 from app.services.pipeline import finalize_meeting
@@ -129,23 +129,25 @@ def start_meeting(
     body: MeetingStart,
     user: CurrentUser,
     db: DB,
-    cal: Annotated[MicrosoftCalendar | None, Depends(ms_optional)],
+    cals: Calendars,
 ):
     """Start recording. With calendar_event_id, title/time/organiser/attendees are read from
-    the user's connected Outlook calendar; otherwise title + participants are used."""
+    the user's connected Google or Outlook calendar (calendar_provider); otherwise title +
+    participants are used."""
     _require_consent(body.recording_consent)
     ev = None
+    source = CalendarSource.manual
     if body.calendar_event_id:
-        if cal is None:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Microsoft calendar is not configured on the server")
-        conn = get_connection(db, user, CalendarSource.microsoft)
+        source = CalendarSource(body.calendar_provider)
+        cal = require_calendar(cals, source)
+        conn = get_connection(db, user, source)
         try:
             ev = cal.get_event(db, conn, body.calendar_event_id)
         except CalendarNotConnected as e:
             raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
         except CalendarError as e:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
-    m = _new_meeting(user, CalendarSource.microsoft if ev else CalendarSource.manual, ev, body.title, body.participants)
+    m = _new_meeting(user, source, ev, body.title, body.participants)
     db.add(m)
     db.commit()
     db.refresh(m)

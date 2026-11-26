@@ -1,41 +1,36 @@
-import { useState } from "react";
-import { changePassword, rotateToken } from "../api/userService";
+import { useState } from 'react';
+import { changePassword, rotateToken } from '../api/userService';
 import {
   disconnectCalendar,
-  getMicrosoftConnectUrl,
-  isMicrosoftConfigured,
+  getConnectUrl,
   listConnections,
-} from "../api/calendarService";
-import useApi from "../hooks/useApi";
-import { useAuth } from "../context/AuthContext";
-import { useToast } from "../context/ToastContext";
-import {
-  Button,
-  ConfirmDialog,
-  ErrorMessage,
-  Input,
-  Spinner,
-  TokenReveal,
-} from "../components/common";
-import { hasErrors, validateNewPassword } from "../utils/validators";
-import { formatDateTime } from "../utils/formatDate";
+  listProviders,
+  PROVIDER_LABELS,
+} from '../api/calendarService';
+import useApi from '../hooks/useApi';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { Button, ConfirmDialog, ErrorMessage, Input, Spinner, TokenReveal } from '../components/common';
+import { hasErrors, validateNewPassword } from '../utils/validators';
+import { formatDateTime } from '../utils/formatDate';
 
 export default function SettingsPage() {
   const { user, replaceToken, updateUser } = useAuth();
   const toast = useToast();
   const { data, loading, error, refetch } = useApi(async () => {
-    const [configured, connections] = await Promise.all([
-      isMicrosoftConfigured(),
-      listConnections(),
-    ]);
-    return { configured, connections };
+    const [providers, connections] = await Promise.all([listProviders(), listConnections()]);
+    return { providers, connections };
   }, []);
   const connections = data?.connections;
-  const [confirm, setConfirm] = useState(null); // 'rotate' | 'disconnect'
+  // Google always listed (it's the recommended calendar); Outlook only when the server has it set up.
+  const shownProviders = (data?.providers || []).filter(
+    (p) => p.configured || p.provider === 'google' || connections?.some((c) => c.provider === p.provider),
+  );
+  const [confirm, setConfirm] = useState(null); // 'rotate' | { disconnect: provider }
   const [busy, setBusy] = useState(false);
   const [newToken, setNewToken] = useState(null);
 
-  const [pw, setPw] = useState({ current: "", password: "", confirm: "" });
+  const [pw, setPw] = useState({ current: '', password: '', confirm: '' });
   const [pwErrors, setPwErrors] = useState({});
   const [pwBusy, setPwBusy] = useState(false);
   const hasPassword = user?.hasPassword !== false;
@@ -43,19 +38,14 @@ export default function SettingsPage() {
   const savePassword = async (e) => {
     e.preventDefault();
     const errs = validateNewPassword(pw.password, pw.confirm);
-    if (hasPassword && !pw.current)
-      errs.current = "Enter your current password";
+    if (hasPassword && !pw.current) errs.current = 'Enter your current password';
     setPwErrors(errs);
     if (hasErrors(errs)) return;
     setPwBusy(true);
     try {
       updateUser(await changePassword(pw.current, pw.password));
-      setPw({ current: "", password: "", confirm: "" });
-      toast.success(
-        hasPassword
-          ? "Password changed. Other browsers were signed out."
-          : "Password set.",
-      );
+      setPw({ current: '', password: '', confirm: '' });
+      toast.success(hasPassword ? 'Password changed. Other browsers were signed out.' : 'Password set.');
     } catch (err) {
       if (err.status === 400) setPwErrors({ current: err.message });
       else toast.error(err.message);
@@ -65,16 +55,13 @@ export default function SettingsPage() {
   };
   const setPwField = (e) => setPw({ ...pw, [e.target.name]: e.target.value });
 
-  const outlook = connections?.find((c) => c.provider === "microsoft");
-  const calendarAvailable = data?.configured !== false;
-
   const rotate = async () => {
     setBusy(true);
     try {
       const token = await rotateToken();
       replaceToken(token);
       setNewToken(token);
-      toast.success("New token issued. The old one no longer works.");
+      toast.success('New token issued. The old one no longer works.');
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -83,19 +70,20 @@ export default function SettingsPage() {
     }
   };
 
-  const connect = async () => {
+  const connect = async (provider) => {
     try {
-      window.open(await getMicrosoftConnectUrl(), "_blank", "noopener");
+      window.open(await getConnectUrl(provider), '_blank', 'noopener');
     } catch (err) {
       toast.error(err.message);
     }
   };
 
   const disconnect = async () => {
+    const provider = confirm?.disconnect;
     setBusy(true);
     try {
-      await disconnectCalendar("microsoft");
-      toast.success("Outlook disconnected and its access tokens deleted");
+      await disconnectCalendar(provider);
+      toast.success(`${PROVIDER_LABELS[provider]} disconnected and its access tokens deleted`);
       refetch();
     } catch (err) {
       toast.error(err.message);
@@ -121,23 +109,21 @@ export default function SettingsPage() {
         <p style={{ margin: 0 }}>
           <strong>{user?.name}</strong> · {user?.email}
         </p>
-        <p className="muted small">
-          Meetings you record are visible only to this account.
-        </p>
+        <p className="muted small">Meetings you record are visible only to this account.</p>
       </div>
 
       <form className="card" onSubmit={savePassword} noValidate>
         <div className="card-title">
           <div>
-            <h2>{hasPassword ? "Change password" : "Set a password"}</h2>
+            <h2>{hasPassword ? 'Change password' : 'Set a password'}</h2>
             <p className="muted small">
               {hasPassword
-                ? "Other browsers where you are signed in will be signed out. This one stays signed in."
-                : "Your account was created before passwords existed. Set one to sign in on other browsers."}
+                ? 'Other browsers where you are signed in will be signed out. This one stays signed in.'
+                : 'Your account was created before passwords existed. Set one to sign in on other browsers.'}
             </p>
           </div>
         </div>
-        <div style={{ display: "grid", gap: 12, maxWidth: 360 }}>
+        <div style={{ display: 'grid', gap: 12, maxWidth: 360 }}>
           {hasPassword && (
             <Input
               label="Current password"
@@ -170,7 +156,7 @@ export default function SettingsPage() {
           />
           <div>
             <Button type="submit" loading={pwBusy}>
-              {hasPassword ? "Change password" : "Set password"}
+              {hasPassword ? 'Change password' : 'Set password'}
             </Button>
           </div>
         </div>
@@ -181,19 +167,18 @@ export default function SettingsPage() {
           <div>
             <h2>API token (optional)</h2>
             <p className="muted small">
-              Only for scripts and integrations. You don't need it to sign in.
-              Getting a new one signs out every browser.
+              Only for scripts and integrations. You don't need it to sign in. Getting a new one signs out every
+              browser.
             </p>
           </div>
-          <Button variant="secondary" onClick={() => setConfirm("rotate")}>
+          <Button variant="secondary" onClick={() => setConfirm('rotate')}>
             Get a new token
           </Button>
         </div>
         {newToken && (
           <>
-            <p className="small" style={{ color: "var(--warning)" }}>
-              Copy it now. It won't be shown again. This browser has already
-              switched to it.
+            <p className="small" style={{ color: 'var(--warning)' }}>
+              Copy it now. It won't be shown again. This browser has already switched to it.
             </p>
             <TokenReveal token={newToken} />
           </>
@@ -203,49 +188,64 @@ export default function SettingsPage() {
       <div className="card">
         <div className="card-title">
           <div>
-            <h2>Outlook calendar</h2>
+            <h2>Calendars</h2>
             <p className="muted small">
-              Lets you pick a meeting from your calendar so its attendees become
-              the participants. Access is read-only.
+              Connect a calendar to pick a meeting on New meeting: its title, time and attendees fill in automatically.
+              Access is read-only.
             </p>
           </div>
         </div>
         {loading && !connections ? (
           <Spinner size="sm" />
-        ) : !calendarAvailable ? (
-          <p className="muted small">
-            Not available: the backend has no Microsoft app configured (
-            <code>MS_CLIENT_ID</code>). Use .ics invites or enter participants
-            manually.
-          </p>
         ) : error ? (
           <ErrorMessage error={error} onRetry={refetch} />
-        ) : outlook ? (
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <span>
-              ✅ Connected as{" "}
-              <strong>{outlook.accountEmail || "your account"}</strong> since{" "}
-              {formatDateTime(outlook.connectedAt)}
-            </span>
-            <Button
-              variant="secondary"
-              onClick={() => setConfirm("disconnect")}
-            >
-              Disconnect
-            </Button>
-          </div>
+        ) : !shownProviders.length ? (
+          <p className="muted small">
+            No calendar is set up on this server yet. The admin adds Google Calendar with <code>GOOGLE_CLIENT_ID</code>{' '}
+            (see deploy/vm/README.md). Until then, use .ics invites or enter participants manually.
+          </p>
         ) : (
-          <div className="row">
-            <Button onClick={connect}>Connect Outlook</Button>
-            <Button variant="secondary" onClick={refetch}>
-              Refresh
-            </Button>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {shownProviders.map(({ provider, configured }) => {
+              const conn = connections.find((c) => c.provider === provider);
+              return (
+                <div key={provider} className="row" style={{ justifyContent: 'space-between' }}>
+                  <span>
+                    <strong>{PROVIDER_LABELS[provider]}</strong>
+                    {' · '}
+                    {!configured ? (
+                      <span className="muted">not set up on this server</span>
+                    ) : conn ? (
+                      <>
+                        ✅ Connected as <strong>{conn.accountEmail || 'your account'}</strong> since{' '}
+                        {formatDateTime(conn.connectedAt)}
+                      </>
+                    ) : (
+                      <span className="muted">not connected</span>
+                    )}
+                  </span>
+                  {configured &&
+                    (conn ? (
+                      <Button variant="secondary" onClick={() => setConfirm({ disconnect: provider })}>
+                        Disconnect
+                      </Button>
+                    ) : (
+                      <span className="row">
+                        <Button onClick={() => connect(provider)}>Connect {PROVIDER_LABELS[provider]}</Button>
+                        <Button variant="secondary" onClick={refetch}>
+                          Refresh
+                        </Button>
+                      </span>
+                    ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       <ConfirmDialog
-        open={confirm === "rotate"}
+        open={confirm === 'rotate'}
         title="Get a new API token?"
         message="All your current sessions end immediately, including other browsers. This browser switches to the new token."
         confirmLabel="Get new token"
@@ -254,8 +254,8 @@ export default function SettingsPage() {
         onCancel={() => setConfirm(null)}
       />
       <ConfirmDialog
-        open={confirm === "disconnect"}
-        title="Disconnect Outlook?"
+        open={!!confirm?.disconnect}
+        title={`Disconnect ${PROVIDER_LABELS[confirm?.disconnect] || 'calendar'}?`}
         message="The stored access tokens are deleted. You can reconnect at any time."
         confirmLabel="Disconnect"
         variant="danger"

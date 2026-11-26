@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     ms_client_secret: str | None = None
     ms_tenant: str = "common"            # "common" = work/school + personal accounts
 
+    # --- Google Calendar. Leave client_id empty to disable. ---
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+
     # --- Email ---
     email_backend: Literal["console", "smtp"] = "console"
     email_outbox_dir: Path = Path("./data/outbox")
@@ -64,6 +68,10 @@ class Settings(BaseSettings):
     @property
     def ms_redirect_uri(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/calendar/microsoft/callback"
+
+    @property
+    def google_redirect_uri(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/calendar/google/callback"
 
 
 @lru_cache

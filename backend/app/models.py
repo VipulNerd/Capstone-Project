@@ -23,6 +23,7 @@ class MeetingStatus(str, enum.Enum):
 
 class CalendarSource(str, enum.Enum):
     microsoft = "microsoft"      # Outlook / Microsoft 365 via Graph (OAuth consent)
+    google = "google"            # Google Calendar (OAuth consent)
     ics = "ics"                  # meeting invite file (.ics)
     manual = "manual"            # typed in by the user
 
