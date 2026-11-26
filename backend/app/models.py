@@ -47,6 +47,7 @@ class ChunkStatus(str, enum.Enum):
 class DeliveryStatus(str, enum.Enum):
     sent = "sent"
     failed = "failed"
+    not_emailed = "not_emailed"  # EMAIL_BACKEND=console: saved on the server only
 
 
 # JSONB on Postgres, plain JSON elsewhere (SQLite tests).

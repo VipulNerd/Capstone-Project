@@ -48,6 +48,10 @@ def _build_message(sender: str, to: str, subject: str, body: str, att: Attachmen
     return msg
 
 
+def actually_emails(mailer: Mailer) -> bool:
+    return not isinstance(mailer, ConsoleMailer)
+
+
 class ConsoleMailer:
     def send(self, to: str, subject: str, body: str, attachment: Attachment) -> None:
         s = get_settings()
