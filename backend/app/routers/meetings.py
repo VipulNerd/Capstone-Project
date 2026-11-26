@@ -38,12 +38,14 @@ from app.schemas import (
 from app.security import CurrentUser
 from app.services.ai import AIClient, get_ai_client
 from app.services.calendar import CalendarError, CalendarEvent, CalendarNotConnected, MicrosoftCalendar, parse_ics
-from app.services.emailer import Attachment, EmailError, Mailer, get_mailer
+from app.services.emailer import Attachment, EmailError, Mailer, actually_emails, get_mailer
 from app.services.exporter import export_mom, export_transcript
 from app.services.pipeline import finalize_meeting
 from app.services.storage import AUDIO_EXTENSIONS, delete_meeting_audio, save_chunk
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
+
+NOT_EMAILED_NOTE = "Not emailed: no email account is configured on the server (EMAIL_BACKEND=console)"
 
 DB = Annotated[Session, Depends(get_db)]
 
@@ -398,11 +400,16 @@ def distribute(
         + f"Regards,\n{m.organizer_name}"
     )
 
+    real = actually_emails(mailer)
     new: list[EmailDelivery] = []
     for to in recipients:
         try:
             mailer.send(to, subject, text, attachment)
-            new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.sent))
+            if real:
+                new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.sent))
+            else:
+                new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.not_emailed,
+                                         error=NOT_EMAILED_NOTE))
         except Exception as e:  # noqa: BLE001 - record per-recipient failure, keep going
             error = str(e) if isinstance(e, EmailError) else f"{type(e).__name__}: {e}"
             new.append(EmailDelivery(recipient_email=to, status=DeliveryStatus.failed, error=error[:1000]))
@@ -414,9 +421,9 @@ def distribute(
     db.commit()
     return DistributeResult(
         sent=sent,
-        failed=len(new) - sent,
+        failed=sum(d.status == DeliveryStatus.failed for d in new),
         deliveries=[DeliveryOut.model_validate(d) for d in new],
-        email_mode=get_settings().email_backend,
+        email_mode="smtp" if real else "console",
     )
 
 

@@ -94,12 +94,25 @@ def test_config_helpers():
     assert "SMTP_USERNAME" in smtp_config_problem(Settings(smtp_username="", smtp_password="p"))
 
 
-def test_distribute_reports_console_mode(client, auth):
-    """The test app runs with EMAIL_BACKEND=console: the UI must be told nothing was emailed."""
+def test_console_mode_is_reported_as_not_emailed(client, auth):
+    """With the console mailer nothing is emailed: no 'sent' rows, meeting stays approved."""
+    from app.main import app
+    from app.services.emailer import ConsoleMailer, get_mailer
+
+    app.dependency_overrides[get_mailer] = ConsoleMailer
     mid = draft(client, auth)
     client.post(f"/meetings/{mid}/approve", json={"approved_by": "Vipul"}, headers=auth)
     body = client.post(f"/meetings/{mid}/distribute", headers=auth).json()
-    assert body["email_mode"] == "console"
+    assert body["email_mode"] == "console" and (body["sent"], body["failed"]) == (0, 0)
+    assert {d["status"] for d in body["deliveries"]} == {"not_emailed"}
+    assert "Not emailed" in body["deliveries"][0]["error"]
+    assert client.get(f"/meetings/{mid}", headers=auth).json()["status"] == "approved"
+
+
+def test_real_mailer_reports_smtp_mode(client, auth):
+    mid = draft(client, auth)
+    client.post(f"/meetings/{mid}/approve", json={"approved_by": "Vipul"}, headers=auth)
+    assert client.post(f"/meetings/{mid}/distribute", headers=auth).json()["email_mode"] == "smtp"
 
 
 def test_health_reports_email_mode(client):

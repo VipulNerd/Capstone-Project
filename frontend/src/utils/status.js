@@ -13,6 +13,7 @@ export const STATUS = {
 export const DELIVERY_STATUS = {
   sent: { label: 'Sent', tone: 'success' },
   failed: { label: 'Failed', tone: 'danger' },
+  not_emailed: { label: 'Not emailed', tone: 'warning' },
 };
 
 // Audio chunk statuses (ChunkStatus) plus local upload states.
