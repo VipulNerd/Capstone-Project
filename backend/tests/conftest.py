@@ -74,13 +74,16 @@ class FakeAI:
 
 class FakeMailer:
     def __init__(self):
-        self.sent = []
+        self.sent = []      # (to, subject, attachment filename) for MOM emails
+        self.messages = []  # (to, subject, body) for every email
         self.fail_for = set()
 
-    def send(self, to, subject, body, attachment):
+    def send(self, to, subject, body, attachment=None):
         if to in self.fail_for:
             raise ConnectionError("SMTP down")
-        self.sent.append((to, subject, attachment.filename))
+        self.messages.append((to, subject, body))
+        if attachment is not None:
+            self.sent.append((to, subject, attachment.filename))
 
 
 @pytest.fixture
@@ -132,8 +135,11 @@ def client(fake_ai, fake_mailer, session_factory):
     app.dependency_overrides.clear()
 
 
-def register(client, name="Vipul", email="vipul@example.com") -> dict:
-    r = client.post("/users", json={"name": name, "email": email})
+PASSWORD = "correct horse battery"
+
+
+def register(client, name="Vipul", email="vipul@example.com", password=PASSWORD) -> dict:
+    r = client.post("/users", json={"name": name, "email": email, "password": password})
     assert r.status_code == 201, r.text
     return {"Authorization": f"Bearer {r.json()['api_token']}"}
 

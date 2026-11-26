@@ -19,7 +19,7 @@ class Attachment:
 
 
 class Mailer(Protocol):
-    def send(self, to: str, subject: str, body: str, attachment: Attachment) -> None:
+    def send(self, to: str, subject: str, body: str, attachment: Attachment | None = None) -> None:
         """Raise on failure."""
 
 
@@ -39,12 +39,13 @@ def smtp_config_problem(s: Settings) -> str | None:
     return f"EMAIL_BACKEND=smtp but {', '.join(missing)} not set" if missing else None
 
 
-def _build_message(sender: str, to: str, subject: str, body: str, att: Attachment) -> EmailMessage:
+def _build_message(sender: str, to: str, subject: str, body: str, att: Attachment | None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = sender, to, subject
     msg.set_content(body)
-    maintype, subtype = att.media_type.split("/", 1)
-    msg.add_attachment(att.content, maintype=maintype, subtype=subtype, filename=att.filename)
+    if att is not None:
+        maintype, subtype = att.media_type.split("/", 1)
+        msg.add_attachment(att.content, maintype=maintype, subtype=subtype, filename=att.filename)
     return msg
 
 
@@ -53,7 +54,7 @@ def actually_emails(mailer: Mailer) -> bool:
 
 
 class ConsoleMailer:
-    def send(self, to: str, subject: str, body: str, attachment: Attachment) -> None:
+    def send(self, to: str, subject: str, body: str, attachment: Attachment | None = None) -> None:
         s = get_settings()
         s.email_outbox_dir.mkdir(parents=True, exist_ok=True)
         msg = _build_message(sender_address(s), to, subject, body, attachment)
@@ -61,7 +62,7 @@ class ConsoleMailer:
 
 
 class SmtpMailer:
-    def send(self, to: str, subject: str, body: str, attachment: Attachment) -> None:
+    def send(self, to: str, subject: str, body: str, attachment: Attachment | None = None) -> None:
         s = get_settings()
         if problem := smtp_config_problem(s):
             raise EmailError(f"Email is not configured on the server: {problem}")

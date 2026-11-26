@@ -41,8 +41,8 @@ export default function AppLayout() {
     setMenuOpen(false);
   }
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout(); // ends the session on the server first, then locally
     navigate('/login', { replace: true });
   };
 

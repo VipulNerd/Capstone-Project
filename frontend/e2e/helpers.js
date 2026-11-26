@@ -34,16 +34,34 @@ export function sineWav(seconds = 3, rate = 16000) {
 /** Unique per run so tests never clash with accounts from earlier runs. */
 export const uniqueEmail = (name) => `${name}.${Date.now()}@example.com`;
 
-/** Registers through the login page and returns the one-time API token. */
-export async function register(page, name, email) {
+export const PASSWORD = 'e2e password 1';
+
+/** The browser's current session token (for direct API checks). */
+export const sessionToken = (page) => page.evaluate(() => localStorage.getItem('mom_api_token'));
+
+/** Creates an account through the login page (signs in) and returns the session token. */
+export async function register(page, name, email, password = PASSWORD) {
   await page.goto('/login');
+  await page.getByRole('tab', { name: 'Create account' }).click();
   await page.getByLabel('Your name').fill(name);
-  await page.getByLabel('Your email').fill(email);
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByLabel('Confirm password').fill(password);
   await page.getByRole('button', { name: 'Create account' }).last().click();
-  await page.getByText('Save your API token').waitFor();
-  const token = (await page.locator('code').textContent()).trim();
-  await page.getByRole('button', { name: /saved it/ }).click();
-  return token;
+  await page.waitForURL((u) => !u.pathname.startsWith('/login'));
+  return sessionToken(page);
+}
+
+/** The newest password-reset code emailed to `email` by the fake backend (console outbox). */
+export function latestResetCode(email) {
+  const dir = path.join(process.env.FAKE_BACKEND_DATA || '', 'outbox');
+  const mails = fs
+    .readdirSync(dir)
+    .map((f) => path.join(dir, f))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .filter((m) => m.includes(`To: ${email}`) && /reset code/i.test(m));
+  return mails.length ? mails[0].match(/reset code is: (\d{6})/)[1] : null;
 }
 
 /** Fills the Review page so it passes validation: names unnamed speakers, owners, deadlines. */

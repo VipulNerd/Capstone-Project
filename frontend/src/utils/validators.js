@@ -14,6 +14,17 @@ export function validateOrganiser({ name, email }) {
   return errors;
 }
 
+export const MIN_PASSWORD = 8;
+
+/** New password + confirmation (sign-up, reset, change). */
+export function validateNewPassword(password, confirm) {
+  const errors = {};
+  if (!password) errors.password = 'Choose a password';
+  else if (password.length < MIN_PASSWORD) errors.password = `Use at least ${MIN_PASSWORD} characters`;
+  if (password && confirm !== password) errors.confirm = "Passwords don't match";
+  return errors;
+}
+
 /** Returns one error object per participant ({} when the row is valid). */
 export function validateParticipants(participants) {
   const seen = new Set();
