@@ -8,7 +8,13 @@ import { fromApiDelivery } from './mappers';
  */
 export async function distributeMom(meetingId, format) {
   const { data } = await client.post(`/meetings/${meetingId}/distribute`, { format });
-  return { sent: data.sent, failed: data.failed, deliveries: data.deliveries.map(fromApiDelivery) };
+  return {
+    sent: data.sent,
+    failed: data.failed,
+    deliveries: data.deliveries.map(fromApiDelivery),
+    // 'console' = the server has no email account configured: nothing was actually emailed.
+    emailMode: data.email_mode || 'smtp',
+  };
 }
 
 /** Every delivery attempt for the meeting, oldest first. */

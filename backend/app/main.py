@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.routers import calendar, meetings, users
+from app.services.emailer import smtp_config_problem
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -16,6 +17,10 @@ log = logging.getLogger(__name__)
 settings = get_settings()
 if settings.secret_key == "dev-only-change-me":
     log.warning("SECRET_KEY is the dev default; set a strong value before deploying")
+if settings.email_backend == "console":
+    log.warning("EMAIL_BACKEND=console: 'Send MOM' only saves emails under %s; nothing is emailed", settings.email_outbox_dir)
+elif problem := smtp_config_problem(settings):
+    log.error("%s; every email send will fail", problem)
 
 
 def _resume_in_background() -> None:
@@ -56,4 +61,6 @@ def health():
         db_ok = True
     except Exception:  # noqa: BLE001
         db_ok = False
-    return {"status": "ok" if db_ok else "degraded", "database": db_ok}
+    s = get_settings()
+    email = s.email_backend if s.email_backend == "console" or not smtp_config_problem(s) else "misconfigured"
+    return {"status": "ok" if db_ok else "degraded", "database": db_ok, "email": email}
