@@ -65,12 +65,36 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(320), unique=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # sha256 of API token
+    # scrypt hash; NULL for accounts created before passwords existed (they use "Forgot password").
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    # Pending "forgot password" code (HMAC of the 6 digits), its expiry and wrong-attempt count.
+    reset_code_hash: Mapped[str | None] = mapped_column(String(64))
+    reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reset_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reset_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    tokens: Mapped[list["ApiToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     calendar_connections: Mapped[list["CalendarConnection"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+    @property
+    def has_password(self) -> bool:
+        return self.password_hash is not None
+
+
+class ApiToken(Base):
+    """One signed-in browser/device (or script). Only the sha256 of the token is stored."""
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship(back_populates="tokens")
 
 
 class CalendarConnection(Base):

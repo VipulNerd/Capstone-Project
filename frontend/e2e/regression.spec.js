@@ -2,7 +2,7 @@
 // Run: npm run test:e2e   (starts the fake backend and a Vite dev server itself)
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
-import { register, sineWav, tempFile, uniqueEmail } from './helpers.js';
+import { PASSWORD, latestResetCode, register, sessionToken, sineWav, tempFile, uniqueEmail } from './helpers.js';
 
 const ICS =
   'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:inv-1\r\nSUMMARY:Sprint planning\r\n' +
@@ -21,27 +21,35 @@ test('organiser flow: register → record → review → approve → distribute'
   let token;
   let meetingId;
 
-  await test.step('protected page redirects to login; validation; token shown once', async () => {
+  await test.step('protected page redirects to login; validation; sign up signs in', async () => {
     await page.goto('/history');
     await page.waitForURL('**/login');
+    await page.getByRole('tab', { name: 'Create account' }).click();
     await page.getByRole('button', { name: 'Create account' }).last().click();
     await expect(page.getByText('Name is required')).toBeVisible();
     await page.getByLabel('Your name').fill('Priya Sharma');
-    await page.getByLabel('Your email').fill(email);
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password', { exact: true }).fill('short');
+    await page.getByLabel('Confirm password').fill('different');
     await page.getByRole('button', { name: 'Create account' }).last().click();
-    await page.getByText('Save your API token').waitFor();
-    token = (await page.locator('code').textContent()).trim();
-    expect(token).toMatch(/^mom_/);
-    await page.getByRole('button', { name: /saved it/ }).click();
+    await expect(page.getByText('Use at least 8 characters')).toBeVisible();
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await page.getByLabel('Confirm password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Create account' }).last().click();
     await page.waitForURL('**/history');
+    token = await sessionToken(page);
+    expect(token).toMatch(/^mom_/);
   });
 
   await test.step('duplicate email is rejected with a sign-in hint', async () => {
     const ctx = await browser.newContext();
     const p2 = await ctx.newPage();
     await p2.goto(`${baseURL}/login`);
+    await p2.getByRole('tab', { name: 'Create account' }).click();
     await p2.getByLabel('Your name').fill('X');
-    await p2.getByLabel('Your email').fill(email);
+    await p2.getByLabel('Email').fill(email);
+    await p2.getByLabel('Password', { exact: true }).fill('another password');
+    await p2.getByLabel('Confirm password').fill('another password');
     await p2.getByRole('button', { name: 'Create account' }).last().click();
     await expect(p2.getByText(/already has an account/)).toBeVisible();
     await ctx.close();
@@ -173,23 +181,61 @@ test('organiser flow: register → record → review → approve → distribute'
     await expect(page.getByText('In progress')).toBeVisible();
   });
 
-  await test.step('sign in with token; wrong token rejected; rotation revokes old token', async () => {
+  await test.step('log out; wrong password rejected; sign in with password', async () => {
     await page.getByRole('button', { name: 'Log out' }).click();
     await page.waitForURL('**/login');
-    await page.getByRole('tab', { name: 'I have a token' }).click();
-    await page.getByLabel('API token').fill('mom_wrong');
+    expect((await api('/users/me', token)).status()).toBe(401); // logout ended the session on the server
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('wrong password');
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page.getByText(/not valid/)).toBeVisible();
-    await page.getByLabel('API token').fill(token);
+    await expect(page.getByText(/Email or password is incorrect/)).toBeVisible();
+    await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await page.waitForURL((u) => u.pathname === '/');
+    token = await sessionToken(page);
+  });
+
+  await test.step('forgot password: emailed code sets a new password and signs in', async () => {
+    const ctx = await browser.newContext();
+    const p4 = await ctx.newPage();
+    await p4.goto(`${baseURL}/login`);
+    await p4.getByRole('link', { name: 'Forgot password?' }).click();
+    await p4.getByLabel('Email').fill(email);
+    await p4.getByRole('button', { name: 'Send code' }).click();
+    await expect(p4.getByText(/6-digit code is on its way/)).toBeVisible();
+    await p4.getByLabel('6-digit code').fill('000000');
+    await p4.getByLabel('New password', { exact: true }).fill('brand new password');
+    await p4.getByLabel('Confirm new password').fill('brand new password');
+    await p4.getByRole('button', { name: /Set new password/ }).click();
+    await expect(p4.getByText(/wrong or has expired/)).toBeVisible();
+    await expect.poll(() => latestResetCode(email)).not.toBeNull();
+    await p4.getByLabel('6-digit code').fill(latestResetCode(email));
+    await p4.getByRole('button', { name: /Set new password/ }).click();
+    await p4.waitForURL((u) => u.pathname === '/');
+    await ctx.close();
+    // Resetting the password signed out every other session, including the first browser.
+    expect((await api('/users/me', token)).status()).toBe(401);
+    await page.goto('/history');
+    await page.waitForURL('**/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('brand new password');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL((u) => !u.pathname.startsWith('/login'));
+  });
+
+  await test.step('settings: change password; API token is optional', async () => {
     await page.goto('/settings');
+    await page.getByLabel('Current password').fill('brand new password');
+    await page.getByLabel('New password', { exact: true }).fill(PASSWORD);
+    await page.getByLabel('Confirm new password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Change password' }).last().click();
+    await expect(page.getByText(/Password changed/)).toBeVisible();
     await page.getByRole('button', { name: 'Get a new token' }).click();
     await page.getByRole('button', { name: 'Get new token' }).click();
     await expect(page.getByText(/won't be shown again/)).toBeVisible();
     await page.goto('/history');
     await expect(page.getByRole('link', { name: 'Launch sync' })).toBeVisible();
-    expect((await api('/users/me', token)).status()).toBe(401);
+    token = await sessionToken(page);
   });
 
   await test.step("another user can't open this meeting", async () => {

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -8,9 +8,13 @@ from app.models import AudioTrack, CalendarSource, ChunkStatus, DeliveryStatus, 
 # --- Users -------------------------------------------------------------------------------------
 
 
+PasswordStr = Annotated[str, Field(min_length=8, max_length=128)]
+
+
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     email: EmailStr
+    password: PasswordStr
 
 
 class UserOut(BaseModel):
@@ -18,10 +22,35 @@ class UserOut(BaseModel):
     id: int
     name: str
     email: str
+    has_password: bool = True
 
 
 class UserCreated(UserOut):
-    api_token: str = Field(description="Shown once. Send as 'Authorization: Bearer <token>'.")
+    api_token: str = Field(description="Session token. Send as 'Authorization: Bearer <token>'.")
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(pattern=r"^\s*\d{6}\s*$")
+    new_password: PasswordStr
+
+
+class PasswordChange(BaseModel):
+    current_password: str | None = Field(default=None, max_length=128)
+    new_password: PasswordStr
+
+
+class Message(BaseModel):
+    message: str
 
 
 # --- Calendar ----------------------------------------------------------------------------------

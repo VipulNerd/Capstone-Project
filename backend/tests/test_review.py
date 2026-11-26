@@ -13,7 +13,7 @@ def draft(client, auth, title="Weekly sync", participants=PARTICIPANTS):
 
 def test_users_register_and_tokens(client):
     h = register(client)
-    assert client.post("/users", json={"name": "X", "email": "VIPUL@example.com"}).status_code == 409
+    assert client.post("/users", json={"name": "X", "email": "VIPUL@example.com", "password": "another pass"}).status_code == 409
     assert client.get("/users/me", headers=h).json()["email"] == "vipul@example.com"
     assert client.get("/users/me").status_code == 401
     assert client.get("/users/me", headers={"Authorization": "Bearer nope"}).status_code == 401

@@ -19,7 +19,11 @@ from datetime import date, timedelta
 from pathlib import Path
 
 PORT = int(os.environ.get("FAKE_BACKEND_PORT", "8001"))
-DATA = Path(tempfile.mkdtemp(prefix="mom-fake-backend-"))
+# FAKE_BACKEND_DATA lets the e2e tests read the outbox (e.g. password-reset codes).
+DATA = Path(os.environ.get("FAKE_BACKEND_DATA") or tempfile.mkdtemp(prefix="mom-fake-backend-"))
+DATA.mkdir(parents=True, exist_ok=True)
+if (DATA / "test.db").exists():
+    (DATA / "test.db").unlink()  # fresh database on every start
 os.environ["DATABASE_URL"] = "sqlite:///" + (DATA / "test.db").as_posix()
 os.environ["AUDIO_DIR"] = str(DATA / "audio")
 os.environ["EMAIL_OUTBOX_DIR"] = str(DATA / "outbox")
@@ -82,11 +86,13 @@ class FakeAI:
         )
 
 
-class FlakyMailer(ConsoleMailer):
-    def send(self, to, subject, body, attachment):
+class FlakyMailer:
+    """Behaves like a real mailer (counts as sent) but writes .eml files to the outbox."""
+
+    def send(self, to, subject, body, attachment=None):
         if to.startswith("bounce"):
             raise ConnectionError("SMTP refused recipient")
-        super().send(to, subject, body, attachment)
+        ConsoleMailer().send(to, subject, body, attachment)
 
 
 app.dependency_overrides[ai_dependency] = lambda: FakeAI()

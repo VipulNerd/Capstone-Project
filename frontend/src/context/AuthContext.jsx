@@ -1,9 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { getMe, register as registerRequest } from '../api/userService';
+import {
+  getMe,
+  login as loginRequest,
+  logout as logoutRequest,
+  register as registerRequest,
+  resetPassword as resetRequest,
+} from '../api/userService';
 import { setUnauthorizedHandler, TOKEN_KEY } from '../api/client';
 
-// The backend issues a long-lived API token per user (POST /users). It is shown once,
-// so the app stores it here and the user can copy it to sign in on another device.
+// Sign-in is email + password. The backend returns a session token per browser, kept here
+// so the user stays signed in until they log out. Users never need to see or save it.
 const USER_KEY = 'mom_user';
 const AuthContext = createContext(null);
 
@@ -15,6 +21,8 @@ function readStoredUser() {
   }
 }
 
+const normEmail = (email) => email.trim().toLowerCase();
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(readStoredUser);
 
@@ -24,46 +32,86 @@ export function AuthProvider({ children }) {
     setUser(u);
   }, []);
 
-  const logout = useCallback(() => {
+  const clearSession = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setUser(null);
   }, []);
 
-  /** Creates the account. Returns the token so the UI can show it once. */
-  const register = useCallback(
-    async (name, email) => {
-      const { user: u, token } = await registerRequest(name.trim(), email.trim().toLowerCase());
-      saveSession(token, u);
-      return token;
-    },
-    [saveSession],
-  );
+  /** Ends this browser's session on the server (best effort), then locally. */
+  const logout = useCallback(async () => {
+    if (localStorage.getItem(TOKEN_KEY)) {
+      try {
+        await logoutRequest();
+      } catch {
+        // Already invalid or offline: signing out locally is what matters.
+      }
+    }
+    clearSession();
+  }, [clearSession]);
 
-  /** Signs in with an existing API token (validated with GET /users/me). */
-  const loginWithToken = useCallback(
-    async (token) => {
-      const u = await getMe(token.trim());
-      saveSession(token.trim(), u);
+  const register = useCallback(
+    async (name, email, password) => {
+      const { user: u, token } = await registerRequest(name.trim(), normEmail(email), password);
+      saveSession(token, u);
       return u;
     },
     [saveSession],
   );
+
+  const login = useCallback(
+    async (email, password) => {
+      const { user: u, token } = await loginRequest(normEmail(email), password);
+      saveSession(token, u);
+      return u;
+    },
+    [saveSession],
+  );
+
+  const resetPassword = useCallback(
+    async (email, code, newPassword) => {
+      const { user: u, token } = await resetRequest(normEmail(email), code.trim(), newPassword);
+      saveSession(token, u);
+      return u;
+    },
+    [saveSession],
+  );
+
+  /** Refresh the stored profile (e.g. after setting a password). */
+  const updateUser = useCallback((u) => {
+    localStorage.setItem(USER_KEY, JSON.stringify(u));
+    setUser(u);
+  }, []);
+
+  // Accounts from before passwords existed: learn whether a password is set.
+  useEffect(() => {
+    if (user && user.hasPassword === undefined) getMe().then(updateUser).catch(() => {});
+  }, [user, updateUser]);
 
   /** After POST /users/me/rotate-token the stored token must be replaced. */
   const replaceToken = useCallback((token) => localStorage.setItem(TOKEN_KEY, token), []);
 
   const getToken = useCallback(() => localStorage.getItem(TOKEN_KEY), []);
 
-  // An invalid or rotated token ends the session.
+  // An invalid or revoked token (e.g. password reset elsewhere) ends the session locally.
   useEffect(() => {
-    setUnauthorizedHandler(logout);
+    setUnauthorizedHandler(clearSession);
     return () => setUnauthorizedHandler(null);
-  }, [logout]);
+  }, [clearSession]);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, register, loginWithToken, logout, replaceToken, getToken }),
-    [user, register, loginWithToken, logout, replaceToken, getToken],
+    () => ({
+      user,
+      isAuthenticated: !!user,
+      register,
+      login,
+      resetPassword,
+      logout,
+      updateUser,
+      replaceToken,
+      getToken,
+    }),
+    [user, register, login, resetPassword, logout, updateUser, replaceToken, getToken],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

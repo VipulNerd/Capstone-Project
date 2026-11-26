@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import os from 'node:os';
 import path from 'node:path';
 
 // Two suites:
@@ -7,6 +8,9 @@ import path from 'node:path';
 //   smoke       short real-AI run against any deployment: E2E_BASE_URL=https://<app> npm run test:smoke
 const SMOKE_URL = process.env.E2E_BASE_URL;
 const repo = path.resolve(import.meta.dirname, '..');
+// The fake backend's data folder; e2e tests read password-reset emails from its outbox.
+export const FAKE_DATA = path.join(os.tmpdir(), 'mom-e2e-fake-backend');
+process.env.FAKE_BACKEND_DATA = FAKE_DATA;
 const python =
   process.env.E2E_PYTHON ||
   path.join(repo, 'backend', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
@@ -53,6 +57,7 @@ export default defineConfig({
           command: `"${python}" scripts/fake_ai_backend.py`,
           cwd: repo,
           url: 'http://127.0.0.1:8001/health',
+          env: { FAKE_BACKEND_DATA: FAKE_DATA },
           reuseExistingServer: false,
           timeout: 60_000,
         },

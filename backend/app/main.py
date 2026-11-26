@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal, engine
-from app.routers import calendar, meetings, users
+from app.routers import auth, calendar, meetings, users
 from app.services.emailer import smtp_config_problem
 
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +48,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(calendar.router)
 app.include_router(meetings.router)
