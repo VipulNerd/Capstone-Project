@@ -50,6 +50,24 @@ To send real email through Gmail:
 3. Failed sends are listed per recipient in the app's delivery log with the reason (wrong password, refused address, ...).
    The first emails may land in Spam.
 
+## Google Calendar (pick a meeting -> its attendees become participants)
+Off until the server has a Google OAuth client. `/api/calendar/providers` shows what is enabled.
+Users connect once (Settings -> Calendars, or New meeting -> From my calendar) and grant read-only access.
+
+1. https://console.cloud.google.com: create a project (e.g. "MinutesAI").
+2. **APIs & Services -> Library -> Google Calendar API -> Enable.**
+3. **OAuth consent screen** (Google Auth Platform): User type **External**, app name MinutesAI, your Gmail as
+   support/developer contact. **Data access -> Add scope** `.../auth/calendar.events.readonly`.
+   **Audience -> Test users -> Add** every Gmail that will connect (up to 100).
+4. **Clients -> Create client -> Web application.** Authorized redirect URI:
+   `https://<vm-dns-name>/api/calendar/google/callback` (local dev: `http://localhost:8000/calendar/google/callback`).
+5. From the repo root in PowerShell: `.\deploy\vm\set-google-calendar.ps1`. It asks for the client ID and secret
+   (hidden), writes `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` to `/opt/mom/.env` and restarts the backend.
+
+While the app is in **Testing**, Google ends a connection after 7 days; users then see "please reconnect" and click
+Connect again. Publishing the app removes this but needs Google's verification for the calendar scope.
+Outlook works the same way with `MS_CLIENT_ID` / `MS_CLIENT_SECRET` (an Entra app registration).
+
 ## CI/CD (GitHub Actions, `.github/workflows/deploy-vm.yml`)
 Every push to `main` runs the tests, then `deploy.sh` over SSH. No Azure permissions are needed.
 Repository settings → Secrets and variables → Actions:

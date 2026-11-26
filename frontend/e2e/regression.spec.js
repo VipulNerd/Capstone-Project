@@ -55,9 +55,13 @@ test('organiser flow: register → record → review → approve → distribute'
     await ctx.close();
   });
 
-  await test.step('settings: Outlook unavailable without MS_CLIENT_ID', async () => {
+  await test.step('settings: calendars listed; Google not set up on the fake backend', async () => {
     await page.goto('/settings');
-    await expect(page.getByText(/no Microsoft app configured/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Calendars' })).toBeVisible();
+    await expect(page.getByText('not set up on this server')).toBeVisible();
+    await page.goto('/meetings/new');
+    await page.getByRole('tab', { name: /From my calendar/ }).click();
+    await expect(page.getByText(/No calendar is set up on this server/)).toBeVisible();
   });
 
   await test.step('new meeting: validation, consent required, owner auto-added', async () => {

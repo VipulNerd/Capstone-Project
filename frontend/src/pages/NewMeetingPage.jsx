@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { startMeeting, startMeetingFromIcs } from '../api/meetingService';
-import { getMicrosoftConnectUrl, listEvents } from '../api/calendarService';
+import { getConnectUrl, listEvents, listProviders, PROVIDER_LABELS } from '../api/calendarService';
 import useApi from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -14,35 +14,46 @@ import liveStyles from '../components/live/live.module.css';
 import styles from './pages.module.css';
 
 const SOURCES = [
-  { value: 'calendar', label: '📅 Outlook calendar' },
+  { value: 'calendar', label: '📅 From my calendar' },
   { value: 'ics', label: '📎 Invite file' },
   { value: 'manual', label: '✍️ Enter details' },
 ];
 
 const timeOf = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
-function CalendarPicker({ selected, onSelect }) {
-  const toast = useToast();
-  const { data: events, loading, error, refetch } = useApi(listEvents, []);
-  const [connecting, setConnecting] = useState(false);
+const eventKey = (ev) => `${ev.provider}:${ev.id}`;
 
-  const connect = async () => {
-    setConnecting(true);
+function ConnectButtons({ providers }) {
+  const toast = useToast();
+  const [connecting, setConnecting] = useState(null);
+  const connect = async (provider) => {
+    setConnecting(provider);
     try {
-      window.open(await getMicrosoftConnectUrl(), '_blank', 'noopener');
+      window.open(await getConnectUrl(provider), '_blank', 'noopener');
     } catch (err) {
       toast.error(err.message);
     } finally {
-      setConnecting(false);
+      setConnecting(null);
     }
   };
+  return providers.map((p) => (
+    <Button key={p} onClick={() => connect(p)} loading={connecting === p}>
+      Connect {PROVIDER_LABELS[p]}
+    </Button>
+  ));
+}
 
-  if (loading && !events) return <Spinner label="Loading your Outlook meetings…" />;
-  if (error?.status === 503) {
+function CalendarPicker({ selected, onSelect }) {
+  const { data: providers } = useApi(listProviders, []);
+  const { data: events, loading, error, refetch } = useApi(listEvents, []);
+  const configured = (providers || []).filter((p) => p.configured).map((p) => p.provider);
+
+  if ((loading && !events) || !providers) return <Spinner label="Loading your calendar meetings…" />;
+  if (!configured.length) {
     return (
       <p className="muted">
-        Outlook isn't set up on this server (the backend has no <code>MS_CLIENT_ID</code>). Use an invite file or enter the
-        details instead.
+        No calendar is set up on this server yet (the admin adds Google Calendar with <code>GOOGLE_CLIENT_ID</code>).
+        Use an invite file or enter the details instead.
       </p>
     );
   }
@@ -50,13 +61,12 @@ function CalendarPicker({ selected, onSelect }) {
     return (
       <div className={styles.calendarConnect}>
         <p style={{ margin: 0 }}>
-          Connect your Outlook calendar once. Microsoft asks you to allow read-only access to your calendar, and the
-          attendees of the meeting you pick become the participants.
+          {error.message && /reconnect/i.test(error.message)
+            ? error.message
+            : 'Connect your calendar once. You allow read-only access, and the attendees of the meeting you pick become the participants.'}
         </p>
         <div className="row">
-          <Button onClick={connect} loading={connecting}>
-            Connect Outlook
-          </Button>
+          <ConnectButtons providers={configured} />
           <Button variant="secondary" onClick={refetch}>
             I've connected, refresh
           </Button>
@@ -78,12 +88,12 @@ function CalendarPicker({ selected, onSelect }) {
   return (
     <ul className={liveStyles.meetingList}>
       {events.map((ev) => (
-        <li key={ev.id}>
+        <li key={eventKey(ev)}>
           <button
             type="button"
-            className={`${liveStyles.meetingOption} ${selected === ev.id ? liveStyles.meetingSelected : ''}`}
-            onClick={() => onSelect(ev.id)}
-            aria-pressed={selected === ev.id}
+            className={`${liveStyles.meetingOption} ${selected && eventKey(selected) === eventKey(ev) ? liveStyles.meetingSelected : ''}`}
+            onClick={() => onSelect(ev)}
+            aria-pressed={!!selected && eventKey(selected) === eventKey(ev)}
           >
             <span className={liveStyles.timeBox}>
               {timeOf(ev.start)}
@@ -92,7 +102,8 @@ function CalendarPicker({ selected, onSelect }) {
             <span className={liveStyles.meetingInfo}>
               <strong>{ev.title}</strong>
               <div className="muted small">
-                {ev.organizerName || ev.organizerEmail} · {ev.attendees.length} attendees
+                {PROVIDER_LABELS[ev.provider]} · {ev.organizerName || ev.organizerEmail} · {ev.attendees.length}{' '}
+                attendees
               </div>
             </span>
             <span className={liveStyles.stack}>
@@ -152,7 +163,7 @@ export default function NewMeetingPage() {
         source === 'ics'
           ? await startMeetingFromIcs(icsFile)
           : source === 'calendar'
-            ? await startMeeting({ calendarEventId: eventId })
+            ? await startMeeting({ calendarEventId: eventId.id, calendarProvider: eventId.provider })
             : await startMeeting({ title: form.title, participants: form.participants });
       toast.success('Meeting created. Start capturing audio when the call begins.');
       navigate(`/meetings/${meeting.id}/record`);
@@ -205,10 +216,17 @@ export default function NewMeetingPage() {
         {source === 'ics' && (
           <>
             <p className="muted small" style={{ marginTop: 0 }}>
-              In Outlook or Teams, open the meeting and save or forward it as a calendar file (.ics). The title, time and
-              attendees are read from it.
+              Save the meeting as a calendar file (.ics): in Outlook or Teams, save or forward it as .ics; in Google
+              Calendar, use Connect above instead, or download the invite (invite.ics) from the invitation email. The
+              title, time and attendees are read from it.
             </p>
-            <FileDropzone file={icsFile} onChange={setIcsFile} accept=".ics,text/calendar" error={errors.ics} hint=".ics invite, up to 1 MB" />
+            <FileDropzone
+              file={icsFile}
+              onChange={setIcsFile}
+              accept=".ics,text/calendar"
+              error={errors.ics}
+              hint=".ics invite, up to 1 MB"
+            />
           </>
         )}
 

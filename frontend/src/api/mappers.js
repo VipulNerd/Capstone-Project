@@ -93,6 +93,7 @@ export function fromApiChunk(c) {
 export function fromApiEvent(e) {
   return {
     id: e.event_id,
+    provider: e.provider || 'microsoft',
     title: e.title,
     start: utc(e.start),
     end: utc(e.end),
